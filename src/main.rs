@@ -2,21 +2,27 @@ use std::{collections::HashMap, ops::RangeInclusive};
 
 use itertools::Itertools;
 
-static NC10_SEQ: &str = "QVQLQQSGAELVKPGASVRMSCKASGYTFTNYNMYWVKQSPGQGLEWIGIFYPGNGDTSYNQKFKDKATLTADKSSNTAYMQLSSLTSEDSAVYYCARSGGSYRYDGGFDYWGQGTTVTV";
-static TEST_SEQ: &str = "AAAAAAQVQLQQSGAELVKPGASVRMSCKASGYTFTNYNAAAAAAAAMYWVKQSPGQGLEWIGIFYPGNGDTSYNQKFKDKATLTADKSSNTAYMQLSSLTSEAAAAAAAAADSAVYYCARSGGSYRYDGGFDYWGQGTTVTV";
+static NC10_SEQ: &[u8] = b"QVQLQQSGAELVKPGASVRMSCKASGYTFTNYNMYWVKQSPGQGLEWIGIFYPGNGDTSYNQKFKDKATLTADKSSNTAYMQLSSLTSEDSAVYYCARSGGSYRYDGGFDYWGQGTTVTV";
+static TEST_SEQ: &[u8] = b"AAAAAAQVQLQQSGAELVKPGASVRMSCKASGYTFTNYNAAAAAAAAMYWVKQSPGQGLEWIGIFYPGNGDTSYNQKFKDKATLTADKSSNTAYMQLSSLTSEAAAAAAAAADSAVYYCARSGGSYRYDGGFDYWGQGTTVTV";
 
-type Kmer = String;
+type Kmer<const K: usize> = [u8; K];
 type Name = String;
 type Position = usize;
 
-struct SequenceProfile(HashMap<Kmer, Position>);
-impl From<&str> for SequenceProfile {
-    fn from(value: &str) -> Self {
-        let v: Vec<char> = value.chars().collect();
+struct SequenceProfile<const K: usize>(HashMap<Kmer<K>, Position>);
+impl<const K: usize> From<&[u8]> for SequenceProfile<K> {
+    fn from(value: &[u8]) -> Self {
         Self(
-            v.windows(7)
+            value
+                .windows(K)
                 .enumerate()
-                .map(|(i, w)| (w.iter().collect(), i))
+                .map(|(i, w)| {
+                    (
+                        w.try_into()
+                            .expect("Windows slice should return the same length slices always."),
+                        i,
+                    )
+                })
                 .collect(),
         )
     }
@@ -71,14 +77,14 @@ impl KmerHits {
 }
 
 #[derive(Debug)]
-struct KmerDatabase(HashMap<Kmer, Vec<(Name, Position)>>);
-impl Default for KmerDatabase {
+struct KmerDatabase<const K: usize>(HashMap<Kmer<K>, Vec<(Name, Position)>>);
+impl<const K: usize> Default for KmerDatabase<K> {
     fn default() -> Self {
         Self(Default::default())
     }
 }
-impl KmerDatabase {
-    pub fn add_profile(&mut self, name: String, profile: SequenceProfile) {
+impl<const K: usize> KmerDatabase<K> {
+    pub fn add_profile(&mut self, name: String, profile: SequenceProfile<K>) {
         profile.0.into_iter().for_each(|(kmer, position)| {
             self.0
                 .entry(kmer)
@@ -87,7 +93,7 @@ impl KmerDatabase {
         });
     }
 
-    pub fn find_kmer_hits(&self, profile: SequenceProfile) -> HashMap<Name, KmerHits> {
+    pub fn find_kmer_hits(&self, profile: SequenceProfile<K>) -> HashMap<Name, KmerHits> {
         profile
             .0
             .into_iter()
@@ -107,7 +113,7 @@ impl KmerDatabase {
 }
 
 fn main() {
-    let mut database = KmerDatabase::default();
+    let mut database = KmerDatabase::<7>::default();
     database.add_profile("NC10".into(), NC10_SEQ.into());
     println!("{:?}", database.find_kmer_hits(TEST_SEQ.into()));
 }
