@@ -20,6 +20,65 @@ pub enum RefSeqErr {
     NoReferenceSequenceFound,
 }
 
+struct IMGTConservedAminoAcids {
+    first_cys: usize,
+    conserved_trp: usize,
+    hydrophobic_89: usize,
+    second_cys: usize,
+    j_trp_or_phe: usize,
+}
+
+fn count_gaps_in_sequence_before_index(sequence: &[u8], index: usize) -> usize {
+    sequence
+        .into_iter()
+        .take(index)
+        .filter(|char| **char == b'-')
+        .count()
+}
+
+#[derive(Debug)]
+enum IMGTError {
+    InvalidAlignment,
+}
+
+impl IMGTConservedAminoAcids {
+    fn is_valid_alignment(alignment: &[u8]) -> bool {
+        let (&aa_23, &aa_41, &aa_89, &aa_104, &aa_118) = match alignment
+            .into_iter()
+            .enumerate()
+            .filter_map(|(position, char)| {
+                [23, 41, 89, 104, 118]
+                    .contains(&(position + 1))
+                    .then(|| char)
+            })
+            .collect_tuple()
+        {
+            Some(tup) => tup,
+            None => return false,
+        };
+
+        aa_23 == b'W'
+            && aa_41 == b'C'
+            && aa_104 == b'C'
+            && [b'F', b'W'].contains(&aa_118)
+            && [b'A', b'I', b'L', b'M', b'F', b'W', b'Y', b'V'].contains(&aa_89)
+    }
+
+    fn from_alignment(alignment: &[u8]) -> Result<Self, IMGTError> {
+        if !Self::is_valid_alignment(alignment) {
+            return Err(IMGTError::InvalidAlignment);
+        }
+
+        Ok(Self {
+            first_cys: 23 - count_gaps_in_sequence_before_index(alignment, 23),
+            conserved_trp: 41 - count_gaps_in_sequence_before_index(alignment, 41),
+            hydrophobic_89: 89 - count_gaps_in_sequence_before_index(alignment, 89),
+            second_cys: 104 - count_gaps_in_sequence_before_index(alignment, 104),
+            j_trp_or_phe: 118 - count_gaps_in_sequence_before_index(alignment, 118),
+        })
+    }
+}
+
 struct ReferenceAlignment {
     reference_record: fasta::Record,
     query_record: fasta::Record,
@@ -50,30 +109,21 @@ fn find_best_reference_sequence(
         .ok_or(RefSeqErr::NoReferenceSequenceFound)
 }
 
-fn stockholm_str_to_alignment_ops(stockholm_str: &str) -> Vec<alignment::AlignmentOperation> {
-    // x: Current sequence under inspection
-    // y: Hypothetical IMGT sequence
-
-    use alignment::AlignmentOperation::*;
-
-    stockholm_str
-        .chars()
-        .into_iter()
-        .map(|char| match char {
-            '-' => Del,
-            '.' => Del,
-            _ => Subst,
-        })
-        .collect()
-}
-
 // TODO: Write a proper stockholm reader.
-fn initialize_imgt_alignments() -> HashMap<&'static str, Vec<alignment::AlignmentOperation>> {
+fn initialize_imgt_alignments() -> HashMap<&'static str, IMGTConservedAminoAcids> {
     let stockholm_data = include_str!("data/reference.stockholm");
     stockholm_data
         .split_ascii_whitespace()
         .tuples()
-        .map(|(id, alignment)| (id, stockholm_str_to_alignment_ops(alignment)))
+        .filter_map(|(id, alignment)| {
+            IMGTConservedAminoAcids::is_valid_alignment(alignment.as_bytes()).then(|| {
+                (
+                    id,
+                    IMGTConservedAminoAcids::from_alignment(alignment.as_bytes())
+                        .expect("Invalid alignment in reference alignments."),
+                )
+            })
+        })
         .collect()
 }
 
@@ -106,11 +156,7 @@ fn main() {
     // TODO: make everything u8 based.
     let args = Args::parse();
 
-    let ref_seqs: Vec<fasta::Record> =
-        fasta::Reader::new(io::Cursor::new(include_bytes!("data/reference.fasta")))
-            .records()
-            .map(|record_result| record_result.expect("Reference records should be valid."))
-            .collect();
+    let ref_seqs = initialize_ref_seqs();
     let imgt_alignments = initialize_imgt_alignments();
 
     let sequences_from_command_line = args.sequences.into_iter().enumerate().map(|(i, seq)| {
@@ -136,22 +182,35 @@ fn main() {
         .chain(sequences_from_sequence_file.into_iter().flatten())
         .map(|query_seq| find_best_reference_sequence(query_seq, &ref_seqs))
         .partition(Result::is_ok);
-
-    reference_alignments
-        .into_iter()
-        .map(Result::unwrap)
-        .map(|reference_alignment| {
-            let id = reference_alignment.reference_record.id().clone();
-            let imgt_operations = imgt_alignments.get(id).expect(
-                "Reference sequence in curated sequence should also be in curated alignments.",
-            );
-            join_alignment_ops(&reference_alignment.alignment.operations, imgt_operations)
-        });
 }
 
-fn join_alignment_ops(
-    from_operations: &Vec<alignment::AlignmentOperation>,
-    into_operations: &Vec<alignment::AlignmentOperation>,
-) -> Vec<alignment::AlignmentOperation> {
-    todo!();
+fn initialize_ref_seqs() -> Vec<fasta::Record> {
+    fasta::Reader::new(io::Cursor::new(include_bytes!("data/reference.fasta")))
+        .records()
+        .map(|record_result| record_result.expect("Reference records should be valid."))
+        .collect()
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn test_validity_of_references() {
+        let ref_seq = initialize_ref_seqs();
+        ref_seq
+            .into_iter()
+            .for_each(|rec| assert!(IMGTConservedAminoAcids::is_valid_alignment(rec.seq())))
+    }
+
+    #[test]
+    fn test_imgtconserved_amino_acids_from_str() {
+        let test_str = "QVQLVQSGA-EVKKPGASVKVSCKASGYTF----TSYGISWVRQAPGQGLEWMGWISAY--NGNTNYAQKLQ-GRVTMTTDTSTSTAYMELRSLRSDDTAVYYCAR--------MDVWGQGTTVTVSS";
+        let conserved_aas = IMGTConservedAminoAcids::from_alignment(test_str.as_bytes()).unwrap();
+        assert_eq!(conserved_aas.first_cys, 22);
+        assert_eq!(conserved_aas.conserved_trp, 36);
+        assert_eq!(conserved_aas.hydrophobic_89, 81);
+        assert_eq!(conserved_aas.second_cys, 96);
+        assert_eq!(conserved_aas.j_trp_or_phe, 102);
+    }
 }
