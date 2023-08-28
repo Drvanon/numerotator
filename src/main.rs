@@ -187,7 +187,7 @@ fn find_best_reference_sequence(
 }
 
 // TODO: Write a proper stockholm reader.
-fn initialize_imgt_alignments() -> HashMap<&'static str, IMGT::ConservedAminoAcids> {
+fn initialize_conserved_residues() -> HashMap<&'static str, IMGT::ConservedAminoAcids> {
     let stockholm_data = include_str!("data/reference.stockholm");
     stockholm_data
         .split_ascii_whitespace()
@@ -234,7 +234,7 @@ fn main() {
     let args = Args::parse();
 
     let ref_seqs = initialize_ref_seqs();
-    let imgt_alignments = initialize_imgt_alignments();
+    let all_conserved_residues = initialize_conserved_residues();
 
     let sequences_from_command_line = args.sequences.into_iter().enumerate().map(|(i, seq)| {
         fasta::Record::with_attrs(
@@ -244,7 +244,6 @@ fn main() {
         )
     });
 
-    // TODO: Make this use iterators instead of strings.
     let sequences_from_sequence_file = args.sequences_file.and_then(|path| {
         Some(
             fasta::Reader::new(fs::File::open(path).expect("Could not open sequences file."))
@@ -258,7 +257,21 @@ fn main() {
     let (reference_alignments, failed_sequences): (Vec<_>, Vec<_>) = sequences_from_command_line
         .chain(sequences_from_sequence_file.into_iter().flatten())
         .map(|query_seq| find_best_reference_sequence(query_seq, &ref_seqs))
-        .partition(Result::is_ok);
+        .partition_result();
+
+    let (conserved_sequences, failed_conserved): (Vec<_>, Vec<_>) = reference_alignments
+        .into_iter()
+        .map(|reference_alignment| {
+            all_conserved_residues
+                .get(reference_alignment.reference_record.id())
+                .expect("Reference sequence id should be in reference alignments aswell.")
+                .transfer(
+                    &reference_alignment.alignment,
+                    reference_alignment.query_record.seq(),
+                )
+                .and_then(|conserved_sequences| Ok((conserved_sequences, reference_alignment)))
+        })
+        .partition_result();
 }
 
 fn initialize_ref_seqs() -> Vec<fasta::Record> {
