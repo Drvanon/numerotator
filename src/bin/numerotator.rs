@@ -4,9 +4,8 @@ use bio::{
 };
 use clap::{value_parser, Parser};
 use itertools::Itertools;
-use std::{collections::HashMap, fs, io, path::PathBuf};
-
-mod imgt;
+use numerator::imgt;
+use std::path::PathBuf;
 
 #[derive(Parser, Debug)]
 #[command()]
@@ -52,30 +51,12 @@ fn find_best_reference_sequence(
         .ok_or(RefSeqErr::NoReferenceSequenceFound)
 }
 
-// TODO: Write a proper stockholm reader.
-fn initialize_conserved_residues() -> HashMap<&'static str, imgt::ConservedAminoAcids> {
-    let stockholm_data = include_str!("data/reference.stockholm");
-    stockholm_data
-        .split_ascii_whitespace()
-        .tuples()
-        .filter_map(|(id, alignment)| {
-            imgt::ConservedAminoAcids::is_valid_alignment(alignment.as_bytes()).then(|| {
-                (
-                    id,
-                    imgt::ConservedAminoAcids::from_alignment(alignment.as_bytes())
-                        .expect("Invalid alignment in reference alignments."),
-                )
-            })
-        })
-        .collect()
-}
-
 fn main() {
     // TODO: make everything u8 based.
     let args = Args::parse();
 
-    let ref_seqs = initialize_ref_seqs();
-    let all_conserved_residues = initialize_conserved_residues();
+    let ref_seqs = imgt::initialize_ref_seqs();
+    let all_conserved_residues = imgt::initialize_conserved_residues();
 
     let sequences_from_command_line = args.sequences.into_iter().enumerate().map(|(i, seq)| {
         fasta::Record::with_attrs(
@@ -87,7 +68,7 @@ fn main() {
 
     let sequences_from_sequence_file = args.sequences_file.and_then(|path| {
         Some(
-            fasta::Reader::new(fs::File::open(path).expect("Could not open sequences file."))
+            fasta::Reader::new(std::fs::File::open(path).expect("Could not open sequences file."))
                 .records()
                 .map(|record_result| {
                     record_result.expect("Could not parse record in sequences file.")
@@ -113,11 +94,4 @@ fn main() {
                 .and_then(|conserved_sequences| Ok((conserved_sequences, reference_alignment)))
         })
         .partition_result();
-}
-
-fn initialize_ref_seqs() -> Vec<fasta::Record> {
-    fasta::Reader::new(io::Cursor::new(include_bytes!("data/reference.fasta")))
-        .records()
-        .map(|record_result| record_result.expect("Reference records should be valid."))
-        .collect()
 }

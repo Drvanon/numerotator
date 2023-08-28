@@ -1,3 +1,13 @@
+use tracing::trace;
+
+use std::collections::HashMap;
+
+use bio::{
+    alignment::{Alignment, AlignmentOperation},
+    io::fasta,
+};
+use itertools::Itertools;
+
 pub struct ConservedAminoAcids {
     first_cys: usize,
     conserved_trp: usize,
@@ -5,9 +15,6 @@ pub struct ConservedAminoAcids {
     second_cys: usize,
     j_trp_or_phe: usize,
 }
-
-use bio::alignment::{Alignment, AlignmentOperation};
-use itertools::Itertools;
 
 pub fn count_gaps_in_sequence_before_index(sequence: &[u8], index: usize) -> usize {
     sequence
@@ -26,7 +33,7 @@ fn find_corresponding_position_in_alignment(alignment: &Alignment, pos: usize) -
     alignment
         .path()
         .into_iter()
-        .find(|(x, y, op)| {
+        .find(|(x, _, op)| {
             *x == pos && (*op == AlignmentOperation::Match || *op == AlignmentOperation::Subst)
         })
         .map(|(_, y, _)| y)
@@ -53,8 +60,16 @@ impl ConservedAminoAcids {
             None => return false,
         };
 
-        aa_23 == b'W'
-            && aa_41 == b'C'
+        trace!(
+            aa_23 = (aa_23 as char).to_string(),
+            aa_41 = (aa_41 as char).to_string(),
+            aa_89 = (aa_89 as char).to_string(),
+            aa_104 = (aa_104 as char).to_string(),
+            aa_118 = (aa_118 as char).to_string(),
+            "Found the following amino acids in expected conserved amino acids.",
+        );
+        aa_23 == b'C'
+            && aa_41 == b'W'
             && aa_104 == b'C'
             && [b'F', b'W'].contains(&aa_118)
             && [b'A', b'I', b'L', b'M', b'F', b'W', b'Y', b'V'].contains(&aa_89)
@@ -74,7 +89,12 @@ impl ConservedAminoAcids {
         })
     }
 
-    pub fn transfer(&self, alignment: &Alignment, destination: &[u8]) -> Result<Self, TransferErr> {
+    pub fn transfer(
+        &self,
+        alignment: &Alignment,
+        _destination: &[u8],
+    ) -> Result<Self, TransferErr> {
+        // TODO: Ensure that on the destination string, the conserved aas are still there!
         Ok(Self {
             first_cys: find_corresponding_position_in_alignment(alignment, self.first_cys)
                 .ok_or(TransferErr::CouldNotFindPositionInAlignment)?,
@@ -93,11 +113,44 @@ impl ConservedAminoAcids {
     }
 }
 
+// TODO: Write a proper stockholm reader.
+pub fn initialize_conserved_residues() -> HashMap<&'static str, ConservedAminoAcids> {
+    let stockholm_data = include_str!("data/reference.stockholm");
+    stockholm_data
+        .split_ascii_whitespace()
+        .tuples()
+        .filter_map(|(id, alignment)| {
+            ConservedAminoAcids::is_valid_alignment(alignment.as_bytes()).then(|| {
+                (
+                    id,
+                    ConservedAminoAcids::from_alignment(alignment.as_bytes())
+                        .expect("Invalid alignment in reference alignments."),
+                )
+            })
+        })
+        .collect()
+}
+
+pub fn initialize_ref_seqs() -> Vec<fasta::Record> {
+    fasta::Reader::new(std::io::Cursor::new(include_bytes!("data/reference.fasta")))
+        .records()
+        .map(|record_result| record_result.expect("Reference records should be valid."))
+        .collect()
+}
+
 #[cfg(test)]
 mod test {
-    use crate::initialize_ref_seqs;
-
     use super::*;
+    use tracing_test::traced_test;
+    const TEST_ALIGNMENT_STR: &str = "QVQLVQSGA-EVKKPGASVKVSCKASGYTF----TSYGISWVRQAPGQGLEWMGWISAY--NGNTNYAQKLQ-GRVTMTTDTSTSTAYMELRSLRSDDTAVYYCAR--------MDVWGQGTTVTVSS";
+
+    #[test]
+    #[traced_test]
+    fn test_valid_conserved_amino_acids() {
+        assert!(ConservedAminoAcids::is_valid_alignment(
+            TEST_ALIGNMENT_STR.as_bytes()
+        ))
+    }
 
     #[test]
     fn test_validity_of_references() {
@@ -109,8 +162,8 @@ mod test {
 
     #[test]
     fn test_imgtconserved_amino_acids_from_str() {
-        let test_str = "QVQLVQSGA-EVKKPGASVKVSCKASGYTF----TSYGISWVRQAPGQGLEWMGWISAY--NGNTNYAQKLQ-GRVTMTTDTSTSTAYMELRSLRSDDTAVYYCAR--------MDVWGQGTTVTVSS";
-        let conserved_aas = ConservedAminoAcids::from_alignment(test_str.as_bytes()).unwrap();
+        let conserved_aas =
+            ConservedAminoAcids::from_alignment(TEST_ALIGNMENT_STR.as_bytes()).unwrap();
         assert_eq!(conserved_aas.first_cys, 22);
         assert_eq!(conserved_aas.conserved_trp, 36);
         assert_eq!(conserved_aas.hydrophobic_89, 81);

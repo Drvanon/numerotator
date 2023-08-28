@@ -1,9 +1,10 @@
 use clap::{value_parser, Parser};
 use itertools::Itertools;
+use numerator::imgt;
+use tracing::{debug, info, Level};
+use tracing_subscriber::FmtSubscriber;
 
-mod imgt;
-
-#[derive(Parser, Debug)]
+#[derive(Debug, Parser)]
 #[command()]
 struct Args {
     #[arg(value_parser=value_parser!(std::path::PathBuf))]
@@ -17,7 +18,7 @@ struct Args {
 }
 
 fn is_alignment_line(line: &str) -> bool {
-    !line.starts_with("//") && !line.starts_with("#") && !line.is_empty()
+    (!line.starts_with("//")) && (!line.starts_with("#")) && (!line.is_empty())
 }
 
 fn alignment_line_to_fasta(alignment_str: &str) -> String {
@@ -34,15 +35,46 @@ fn alignment_line_to_fasta(alignment_str: &str) -> String {
 // naturaly it should download this itself.
 fn main() {
     let args = Args::parse();
+    // a builder for `FmtSubscriber`.
+    let subscriber = FmtSubscriber::builder()
+        // all spans/events with a level higher than TRACE (e.g, debug, info, warn, etc.)
+        // will be written to stdout.
+        .with_max_level(Level::TRACE)
+        // completes the builder.
+        .finish();
+    tracing::subscriber::set_global_default(subscriber).expect("setting default subscriber failed");
+
+    info!(
+        input_file = args.stockholm_file.as_os_str().to_str(),
+        "Reading input file"
+    );
     let alignment_data =
         std::fs::read_to_string(args.stockholm_file).expect("Could not open alignments file.");
 
+    debug!(data_size = alignment_data.len(), "Read input file.");
+
+    let mut n_valid_lines = 0;
     // Identify lines with valid sequences.
     let valid_lines: Vec<_> = alignment_data
         .lines()
         .filter(|line| is_alignment_line(line))
-        .filter(|line| imgt::ConservedAminoAcids::is_valid_alignment(line.as_bytes()))
+        .inspect(|_| n_valid_lines += 1)
+        .filter(|line| {
+            imgt::ConservedAminoAcids::is_valid_alignment(
+                line.split_ascii_whitespace()
+                    .skip(1)
+                    .take(1)
+                    .next()
+                    .expect("Valid lines should have at least two parts.")
+                    .as_bytes(),
+            )
+        })
         .collect();
+
+    debug!(
+        n_valid_alignments = valid_lines.len(),
+        n_valid_lines, "Validated lines."
+    );
 
     let reference_sequences: String = valid_lines
         .iter()
