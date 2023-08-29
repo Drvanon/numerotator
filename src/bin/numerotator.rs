@@ -3,9 +3,11 @@ use bio::{
     io::fasta,
 };
 use clap::{value_parser, Parser};
-use itertools::Itertools;
 use numerator::imgt;
 use std::path::PathBuf;
+use thiserror::Error;
+use tracing::{debug, error, info, trace, Level};
+use tracing_subscriber::FmtSubscriber;
 
 #[derive(Parser, Debug)]
 #[command()]
@@ -16,9 +18,10 @@ struct Args {
     sequences_file: Option<PathBuf>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Error)]
 pub enum RefSeqErr {
-    NoReferenceSequenceFound,
+    #[error("Could not find reference record for record {0}")]
+    NoReferenceSequenceFound(fasta::Record),
 }
 
 struct ReferenceAlignment {
@@ -41,23 +44,51 @@ fn find_best_reference_sequence(
                 aligner.local(record.seq(), reference_record.seq()),
             )
         })
-        .max_by_key(|(_, alignment)| alignment.score)
-        .map(|(reference_record, alignment)| ReferenceAlignment {
-            // Cloning here should not be a huge problem, since we only clone once per query sequence.
-            reference_record: reference_record.clone(),
-            alignment,
-            query_record: record,
+        .max_by_key(|(_reference, alignment)| alignment.score)
+        .map(|(reference_record, alignment)| {
+            trace!(
+                score = alignment.score,
+                reference = reference_record.id(),
+                "Found alignment."
+            );
+            ReferenceAlignment {
+                // Cloning here should not be a huge problem, since we only clone once per query sequence.
+                reference_record: reference_record.clone(),
+                alignment,
+                query_record: record.clone(),
+            }
         })
-        .ok_or(RefSeqErr::NoReferenceSequenceFound)
+        .ok_or(RefSeqErr::NoReferenceSequenceFound(record))
+}
+
+fn report_error<OkType, ErrType: std::fmt::Display>(
+    result: Result<OkType, ErrType>,
+) -> Result<OkType, ErrType> {
+    result.map_err(|err| {
+        error!("{}", err);
+        err
+    })
 }
 
 fn main() {
     // TODO: make everything u8 based.
     let args = Args::parse();
 
+    let subscriber = FmtSubscriber::builder()
+        // all spans/events with a level higher than TRACE (e.g, debug, info, warn, etc.)
+        // will be written to stdout.
+        .with_max_level(Level::TRACE)
+        // completes the builder.
+        .finish();
+    tracing::subscriber::set_global_default(subscriber).expect("setting default subscriber failed");
+
+    debug!("Initializing reference sequences.");
     let ref_seqs = imgt::initialize_ref_seqs();
+
+    debug!("Initializing conserved residues.");
     let all_conserved_residues = imgt::initialize_conserved_residues();
 
+    debug!("Collecting sequences from command line.");
     let sequences_from_command_line = args.sequences.into_iter().enumerate().map(|(i, seq)| {
         fasta::Record::with_attrs(
             i.to_string().as_str(),
@@ -67,6 +98,7 @@ fn main() {
     });
 
     let sequences_from_sequence_file = args.sequences_file.and_then(|path| {
+        info!("Reading input sequences file.");
         Some(
             fasta::Reader::new(std::fs::File::open(path).expect("Could not open sequences file."))
                 .records()
@@ -76,14 +108,15 @@ fn main() {
         )
     });
 
-    let (reference_alignments, failed_sequences): (Vec<_>, Vec<_>) = sequences_from_command_line
+    sequences_from_command_line
         .chain(sequences_from_sequence_file.into_iter().flatten())
         .map(|query_seq| find_best_reference_sequence(query_seq, &ref_seqs))
-        .partition_result();
-
-    let (conserved_sequences, failed_conserved): (Vec<_>, Vec<_>) = reference_alignments
-        .into_iter()
+        .flat_map(report_error)
         .map(|reference_alignment| {
+            trace!(
+                reference = reference_alignment.reference_record.id(),
+                "Looking for reference alignment"
+            );
             all_conserved_residues
                 .get(reference_alignment.reference_record.id())
                 .expect("Reference sequence id should be in reference alignments aswell.")
@@ -93,5 +126,6 @@ fn main() {
                 )
                 .and_then(|conserved_sequences| Ok((conserved_sequences, reference_alignment)))
         })
-        .partition_result();
+        .flat_map(report_error)
+        .for_each(drop);
 }
