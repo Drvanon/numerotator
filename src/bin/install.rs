@@ -26,7 +26,7 @@ fn alignment_line_to_fasta(alignment_str: &str) -> String {
         .split_ascii_whitespace()
         .next_tuple()
         .expect("Alignment string should have id and alignment.");
-    let sequence: String = alignment.chars().filter(|char| *char == '-').collect();
+    let sequence: String = alignment.chars().filter(|char| *char != '-').collect();
     format!(">{}\n{}\n", id, sequence)
 }
 
