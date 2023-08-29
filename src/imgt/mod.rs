@@ -9,6 +9,7 @@ use bio::{
 use itertools::Itertools;
 
 pub mod annotations;
+pub mod regions;
 
 pub struct ConservedResidues {
     first_cys: usize,

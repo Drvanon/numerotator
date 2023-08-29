@@ -81,7 +81,9 @@ fn main() {
         .map(|&line| alignment_line_to_fasta(line))
         .collect();
 
-    let reference_alignments: String = valid_lines.into_iter().intersperse("\n").collect();
+    // Qualifying due to name conflict.
+    let reference_alignments: String =
+        Itertools::intersperse(valid_lines.into_iter(), "\n").collect();
 
     std::fs::write(args.output_alignments_file, reference_alignments)
         .expect("Could not write alignments file.");

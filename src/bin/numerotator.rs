@@ -45,7 +45,7 @@ fn find_best_reference_sequence(
         .map(|reference_record| {
             (
                 reference_record,
-                aligner.local(record.seq(), reference_record.seq()),
+                aligner.local(reference_record.seq(), record.seq()),
             )
         })
         .max_by_key(|(_reference, alignment)| alignment.score)
@@ -103,6 +103,7 @@ fn main() {
         .finish();
     tracing::subscriber::set_global_default(subscriber).expect("setting default subscriber failed");
 
+    info!("Initializing...");
     debug!("Initializing reference sequences.");
     let ref_seqs = imgt::initialize_ref_seqs();
 
@@ -137,14 +138,15 @@ fn main() {
         })
         .flat_map(report_error)
         .map(|reference_alignment| {
+            trace!(query_seq = reference_alignment.query_record.id(), alignment=format!("{:?}", reference_alignment.alignment.path()), "Transferring reference alignment.");
             transfer_conserved_residues_via_alignment(reference_alignment, &all_conserved_residues)
         })
         .flat_map(report_error)
         .map(
-            |(conserved_residues, reference_alignment)| -> Result<_, imgt::annotations::AnnotationError> {
+            |(conserved_residues, reference_alignment)| -> Result<_, imgt::regions::AnnotationError> {
                 trace!(query_seq = reference_alignment.query_record.id(), "Creating VREGION annotation.");
                 Ok((
-                    imgt::annotations::VRegionAnnotation::try_from(conserved_residues)?,
+                    imgt::annotations::VRegionAnnotation::try_from(&conserved_residues, &reference_alignment.alignment)?,
                     reference_alignment,
                 ))
             },
@@ -158,6 +160,10 @@ fn main() {
         vregion_annotations
             .into_iter()
             .map(|(vregion_annotation, reference_alignment)| -> Vec<_> {
+                trace!(
+                    query_seq = reference_alignment.query_record.id(),
+                    "Applying annotations."
+                );
                 vregion_annotation
                     .into_iter()
                     .map(|ann| {
