@@ -60,7 +60,7 @@ fn main() {
         .filter(|line| is_alignment_line(line))
         .inspect(|_| n_valid_lines += 1)
         .filter(|line| {
-            imgt::ConservedAminoAcids::is_valid_alignment(
+            imgt::ConservedResidues::is_valid_alignment(
                 line.split_ascii_whitespace()
                     .skip(1)
                     .take(1)

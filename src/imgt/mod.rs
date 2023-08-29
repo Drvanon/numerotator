@@ -8,7 +8,9 @@ use bio::{
 };
 use itertools::Itertools;
 
-pub struct ConservedAminoAcids {
+pub mod annotations;
+
+pub struct ConservedResidues {
     first_cys: usize,
     conserved_trp: usize,
     hydrophobic_89: usize,
@@ -45,7 +47,7 @@ pub enum TransferErr {
     ConservedPositionNotInAlignment,
 }
 
-impl ConservedAminoAcids {
+impl ConservedResidues {
     pub fn is_valid_alignment(alignment: &[u8]) -> bool {
         let (&aa_23, &aa_41, &aa_89, &aa_104, &aa_118) = match alignment
             .into_iter()
@@ -107,16 +109,16 @@ impl ConservedAminoAcids {
 }
 
 // TODO: Write a proper stockholm reader.
-pub fn initialize_conserved_residues() -> HashMap<&'static str, ConservedAminoAcids> {
-    let stockholm_data = include_str!("data/reference.stockholm");
+pub fn initialize_conserved_residues() -> HashMap<&'static str, ConservedResidues> {
+    let stockholm_data = include_str!("../data/reference.stockholm");
     stockholm_data
         .split_ascii_whitespace()
         .tuples()
         .filter_map(|(id, alignment)| {
-            ConservedAminoAcids::is_valid_alignment(alignment.as_bytes()).then(|| {
+            ConservedResidues::is_valid_alignment(alignment.as_bytes()).then(|| {
                 (
                     id,
-                    ConservedAminoAcids::from_alignment(alignment.as_bytes())
+                    ConservedResidues::from_alignment(alignment.as_bytes())
                         .expect("Invalid alignment in reference alignments."),
                 )
             })
@@ -125,10 +127,12 @@ pub fn initialize_conserved_residues() -> HashMap<&'static str, ConservedAminoAc
 }
 
 pub fn initialize_ref_seqs() -> Vec<fasta::Record> {
-    fasta::Reader::new(std::io::Cursor::new(include_bytes!("data/reference.fasta")))
-        .records()
-        .map(|record_result| record_result.expect("Reference records should be valid."))
-        .collect()
+    fasta::Reader::new(std::io::Cursor::new(include_bytes!(
+        "../data/reference.fasta"
+    )))
+    .records()
+    .map(|record_result| record_result.expect("Reference records should be valid."))
+    .collect()
 }
 
 #[cfg(test)]
@@ -140,7 +144,7 @@ mod test {
     #[test]
     #[traced_test]
     fn test_valid_conserved_amino_acids() {
-        assert!(ConservedAminoAcids::is_valid_alignment(
+        assert!(ConservedResidues::is_valid_alignment(
             TEST_ALIGNMENT_STR.as_bytes()
         ))
     }
@@ -150,13 +154,13 @@ mod test {
         let ref_seq = initialize_ref_seqs();
         ref_seq
             .into_iter()
-            .for_each(|rec| assert!(ConservedAminoAcids::is_valid_alignment(rec.seq())))
+            .for_each(|rec| assert!(ConservedResidues::is_valid_alignment(rec.seq())))
     }
 
     #[test]
     fn test_imgtconserved_amino_acids_from_str() {
         let conserved_aas =
-            ConservedAminoAcids::from_alignment(TEST_ALIGNMENT_STR.as_bytes()).unwrap();
+            ConservedResidues::from_alignment(TEST_ALIGNMENT_STR.as_bytes()).unwrap();
         assert_eq!(conserved_aas.first_cys, 22);
         assert_eq!(conserved_aas.conserved_trp, 36);
         assert_eq!(conserved_aas.hydrophobic_89, 81);
