@@ -1,4 +1,4 @@
-use tracing::trace;
+use thiserror::Error;
 
 use std::collections::HashMap;
 
@@ -39,9 +39,10 @@ fn find_corresponding_position_in_alignment(alignment: &Alignment, pos: usize) -
         .map(|(_, y, _)| y)
 }
 
-#[derive(Debug)]
+#[derive(Debug, Error)]
 pub enum TransferErr {
-    CouldNotFindPositionInAlignment,
+    #[error("Conserved residue not in alignment.")]
+    ConservedPositionNotInAlignment,
 }
 
 impl ConservedAminoAcids {
@@ -60,14 +61,6 @@ impl ConservedAminoAcids {
             None => return false,
         };
 
-        trace!(
-            aa_23 = (aa_23 as char).to_string(),
-            aa_41 = (aa_41 as char).to_string(),
-            aa_89 = (aa_89 as char).to_string(),
-            aa_104 = (aa_104 as char).to_string(),
-            aa_118 = (aa_118 as char).to_string(),
-            "Found the following amino acids in expected conserved amino acids.",
-        );
         aa_23 == b'C'
             && aa_41 == b'W'
             && aa_104 == b'C'
@@ -97,18 +90,18 @@ impl ConservedAminoAcids {
         // TODO: Ensure that on the destination string, the conserved aas are still there!
         Ok(Self {
             first_cys: find_corresponding_position_in_alignment(alignment, self.first_cys)
-                .ok_or(TransferErr::CouldNotFindPositionInAlignment)?,
+                .ok_or(TransferErr::ConservedPositionNotInAlignment)?,
             conserved_trp: find_corresponding_position_in_alignment(alignment, self.conserved_trp)
-                .ok_or(TransferErr::CouldNotFindPositionInAlignment)?,
+                .ok_or(TransferErr::ConservedPositionNotInAlignment)?,
             hydrophobic_89: find_corresponding_position_in_alignment(
                 alignment,
                 self.hydrophobic_89,
             )
-            .ok_or(TransferErr::CouldNotFindPositionInAlignment)?,
+            .ok_or(TransferErr::ConservedPositionNotInAlignment)?,
             second_cys: find_corresponding_position_in_alignment(alignment, self.second_cys)
-                .ok_or(TransferErr::CouldNotFindPositionInAlignment)?,
+                .ok_or(TransferErr::ConservedPositionNotInAlignment)?,
             j_trp_or_phe: find_corresponding_position_in_alignment(alignment, self.j_trp_or_phe)
-                .ok_or(TransferErr::CouldNotFindPositionInAlignment)?,
+                .ok_or(TransferErr::ConservedPositionNotInAlignment)?,
         })
     }
 }
