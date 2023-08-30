@@ -21,24 +21,34 @@ struct Args {
     only_regions: bool,
 }
 
+/// Error thrown when looking for a reference sequence.
 #[derive(Debug, Error)]
 pub enum RefSeqErr {
     #[error("Could not find reference record for record {0}")]
     NoReferenceSequenceFound(fasta::Record),
 }
 
+/// Captures an alignment of a query sequence to reference sequence.
+///
+/// Uses records to keep track of identities. (For the reference this
+/// is particularly important since often you will want to look up the
+/// associated curated alignment.)
 struct ReferenceAlignment {
     reference_record: fasta::Record,
     query_record: fasta::Record,
     alignment: Alignment,
 }
 
+/// Find the record that produces the best alignment.
 fn find_best_reference_sequence(
     record: fasta::Record,
     ref_seqs: &Vec<fasta::Record>,
 ) -> Result<ReferenceAlignment, RefSeqErr> {
+    // TODO: Optimize settings.
+    // Settings taken from rust bio example. Fully unoptimized.
     let mut aligner =
         alignment::pairwise::Aligner::new(-5, -1, |a, b| if a == b { 1i32 } else { -1i32 });
+
     // TODO: Optimize this to go by alignment block!
     ref_seqs
         .into_iter()
@@ -73,17 +83,17 @@ fn report_error<OkType, ErrType: std::fmt::Display>(
         err
     })
 }
+
+/// Take the conserved residues on record and identify what positions have matching relative positions using an alignment.
 fn transfer_conserved_residues_via_alignment(
     reference_alignment: ReferenceAlignment,
-    all_conserved_residues: &std::collections::HashMap<&str, imgt::ConservedResidues>,
+    conserved_residues: imgt::ConservedResidues,
 ) -> Result<(imgt::ConservedResidues, ReferenceAlignment), imgt::TransferErr> {
     trace!(
         reference = reference_alignment.reference_record.id(),
         "Looking for reference alignment"
     );
-    all_conserved_residues
-        .get(reference_alignment.reference_record.id())
-        .expect("Reference sequence id should be in reference alignments aswell.")
+    conserved_residues
         .transfer(
             &reference_alignment.alignment,
             reference_alignment.query_record.seq(),
@@ -137,9 +147,15 @@ fn main() {
             find_best_reference_sequence(query_seq, &ref_seqs)
         })
         .flat_map(report_error)
-        .map(|reference_alignment| {
+        .map(|reference_alignment| -> (ReferenceAlignment, imgt::ConservedResidues){
+             let conserved_residues = all_conserved_residues
+                .get(reference_alignment.reference_record.id())
+                .expect("Reference sequence id should be in reference alignments aswell.");
+            (reference_alignment, conserved_residues.clone())
+        })
+        .map(|(reference_alignment, conserved_residues)| {
             trace!(query_seq = reference_alignment.query_record.id(), alignment=format!("{:?}", reference_alignment.alignment.path()), "Transferring reference alignment.");
-            transfer_conserved_residues_via_alignment(reference_alignment, &all_conserved_residues)
+            transfer_conserved_residues_via_alignment(reference_alignment, conserved_residues)
         })
         .flat_map(report_error)
         .map(

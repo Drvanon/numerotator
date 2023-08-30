@@ -11,6 +11,7 @@ use itertools::Itertools;
 pub mod annotations;
 pub mod regions;
 
+#[derive(Clone)]
 pub struct ConservedResidues {
     first_cys: usize,
     conserved_trp: usize,
