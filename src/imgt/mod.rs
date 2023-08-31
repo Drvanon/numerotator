@@ -11,6 +11,7 @@ use itertools::Itertools;
 pub mod annotations;
 pub mod regions;
 
+/// Container for the positions of a sequence that correspond with IMGT conserved residues in the VREGION.
 #[derive(Clone)]
 pub struct ConservedResidues {
     first_cys: usize,
@@ -20,7 +21,11 @@ pub struct ConservedResidues {
     j_trp_or_phe: usize,
 }
 
+/// Count the number of gaps in a sequence before a given index.
+///
+/// Here '-' is the gap character.
 pub fn count_gaps_in_sequence_before_index(sequence: &[u8], index: usize) -> usize {
+    // TODO: Accept multiple gap characters.
     sequence
         .into_iter()
         .take(index)
@@ -28,21 +33,36 @@ pub fn count_gaps_in_sequence_before_index(sequence: &[u8], index: usize) -> usi
         .count()
 }
 
-#[derive(Debug)]
+/// Error for when
+#[derive(Debug, Error)]
 pub enum IMGTError {
+    #[error("Alignment did not have conserved residues in expected places.")]
     InvalidAlignment,
 }
 
+/// Find the position in the alignment sequence that corresponds to a given position.
+///
+/// For example, say the following alignment exists.
+/// ```
+///    1 2 3 4 5
+/// x: A B C D E
+///    | |   | |
+/// y: A B - D F
+///    1 2   3 4
+/// ```
+/// Then position 4 in x would correspond to position 3 in y.
 fn find_corresponding_position_in_alignment(alignment: &Alignment, pos: usize) -> Option<usize> {
     alignment
         .path()
         .into_iter()
+        // TODO: check if there is no off-by-one error here. (Because path starts at one.)
         .find(|(x, _, op)| {
             *x == pos && (*op == AlignmentOperation::Match || *op == AlignmentOperation::Subst)
         })
         .map(|(_, y, _)| y)
 }
 
+/// Errors for when transfering conserved residues from one sequence to another.
 #[derive(Debug, Error)]
 pub enum TransferErr {
     #[error("Conserved residue not in alignment.")]
@@ -50,6 +70,9 @@ pub enum TransferErr {
 }
 
 impl ConservedResidues {
+    /// Confirm that an alignment sequence is a valid IMGT reference sequence.
+    ///
+    /// The alignment sequence should be of the shap "ABC-DE".
     pub fn is_valid_alignment(alignment: &[u8]) -> bool {
         let (&aa_23, &aa_41, &aa_89, &aa_104, &aa_118) = match alignment
             .into_iter()
@@ -72,6 +95,15 @@ impl ConservedResidues {
             && [b'A', b'I', b'L', b'M', b'F', b'W', b'Y', b'V'].contains(&aa_89)
     }
 
+    /// Try to find the conserved residues in a sequence by the alignment.
+    ///
+    /// Expects that the following relations will be fulfilled:
+    ///
+    /// - cysteine at position 23
+    /// - tryptophan at position 41
+    /// - hydrophobic amino acid at position 89
+    /// - cysteine at position 104
+    /// - phenylalanine or tryptophan at position 118
     pub fn from_alignment(alignment: &[u8]) -> Result<Self, IMGTError> {
         if !Self::is_valid_alignment(alignment) {
             return Err(IMGTError::InvalidAlignment);
@@ -86,6 +118,7 @@ impl ConservedResidues {
         })
     }
 
+    /// Identify the conserved residues of a new sequence through the conserved residues of a reference sequence and an alignment between the two.
     pub fn transfer(
         &self,
         alignment: &Alignment,

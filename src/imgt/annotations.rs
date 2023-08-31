@@ -1,5 +1,6 @@
 use bio::io::fasta;
 
+/// Annotation of a sequence.
 #[derive(Clone)]
 pub struct Annotation {
     pub start: usize,
@@ -7,6 +8,7 @@ pub struct Annotation {
     pub name: String,
 }
 
+/// Create a new record for the subsequence that the annotation references in a given record.
 pub fn apply_annotation(record: &fasta::Record, annotation: &Annotation) -> fasta::Record {
     fasta::Record::with_attrs(
         format!("{}_{}", record.id(), annotation.name).as_str(),
@@ -15,6 +17,7 @@ pub fn apply_annotation(record: &fasta::Record, annotation: &Annotation) -> fast
     )
 }
 
+/// IMGT Framework (FRx-IMGT) annotations of a VREGION sequence.
 #[derive(Clone)]
 pub struct FrameworkAnnotation {
     pub fr1: Annotation,
@@ -33,6 +36,7 @@ impl IntoIterator for FrameworkAnnotation {
     }
 }
 
+/// IMGT CDR (CDRx-IMGT) annotations of a VREGION sequence.
 #[derive(Clone)]
 pub struct CDRAnnotation {
     pub cdr1: Annotation,
@@ -49,6 +53,7 @@ impl IntoIterator for CDRAnnotation {
     }
 }
 
+/// VREGION annotation of a sequence.
 #[derive(Clone)]
 pub struct VRegionAnnotation {
     pub cdr_annotation: CDRAnnotation,

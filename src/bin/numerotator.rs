@@ -3,7 +3,7 @@ use bio::{
     io::fasta,
 };
 use clap::{value_parser, Parser};
-use numerator::imgt;
+use numerator::imgt::{self, annotations::VRegionAnnotation};
 use std::path::PathBuf;
 use thiserror::Error;
 use tracing::{debug, error, info, trace, Level};
@@ -84,23 +84,6 @@ fn report_error<OkType, ErrType: std::fmt::Display>(
     })
 }
 
-/// Take the conserved residues on record and identify what positions have matching relative positions using an alignment.
-fn transfer_conserved_residues_via_alignment(
-    reference_alignment: ReferenceAlignment,
-    conserved_residues: imgt::ConservedResidues,
-) -> Result<(imgt::ConservedResidues, ReferenceAlignment), imgt::TransferErr> {
-    trace!(
-        reference = reference_alignment.reference_record.id(),
-        "Looking for reference alignment"
-    );
-    conserved_residues
-        .transfer(
-            &reference_alignment.alignment,
-            reference_alignment.query_record.seq(),
-        )
-        .and_then(|conserved_residues| Ok((conserved_residues, reference_alignment)))
-}
-
 fn main() {
     let args = Args::parse();
 
@@ -120,6 +103,9 @@ fn main() {
     debug!("Initializing conserved residues.");
     let all_conserved_residues = imgt::initialize_conserved_residues();
 
+    // Records are much nicer to deal with than straigt strings, since they carry their own
+    // identifier and description. Now they don't have to be generated at the call site.
+    // It might not be great to be tied to fasta though.
     debug!("Collecting sequences from command line.");
     let sequences_from_command_line = args.sequences.into_iter().enumerate().map(|(i, seq)| {
         fasta::Record::with_attrs(
@@ -140,58 +126,71 @@ fn main() {
         )
     });
 
-    let vregion_annotations: Vec<(_, _)> = sequences_from_command_line
+    sequences_from_command_line
         .chain(sequences_from_sequence_file.into_iter().flatten())
         .map(|query_seq| {
             trace!(query_seq = query_seq.id(), "Finding reference sequence.");
             find_best_reference_sequence(query_seq, &ref_seqs)
         })
         .flat_map(report_error)
-        .map(|reference_alignment| -> (ReferenceAlignment, imgt::ConservedResidues){
-             let conserved_residues = all_conserved_residues
+        .map(|reference_alignment| -> Result<(VRegionAnnotation, ReferenceAlignment), anyhow::Error> {
+            let reference_conserved_residues = all_conserved_residues
                 .get(reference_alignment.reference_record.id())
                 .expect("Reference sequence id should be in reference alignments aswell.");
-            (reference_alignment, conserved_residues.clone())
-        })
-        .map(|(reference_alignment, conserved_residues)| {
-            trace!(query_seq = reference_alignment.query_record.id(), alignment=format!("{:?}", reference_alignment.alignment.path()), "Transferring reference alignment.");
-            transfer_conserved_residues_via_alignment(reference_alignment, conserved_residues)
+            trace!(
+                query_seq = reference_alignment.query_record.id(),
+                alignment = format!("{:?}", reference_alignment.alignment.path()),
+                "Transferring reference alignment."
+            );
+            let vregions = reference_conserved_residues
+                .transfer(
+                    &reference_alignment.alignment,
+                    reference_alignment.query_record.seq(),
+                )
+                .map_err(anyhow::Error::from)
+                .and_then(|conserved_residues| {
+                    trace!(
+                        query_seq = reference_alignment.query_record.id(),
+                        "Creating VREGION annotation."
+                    );
+                    imgt::annotations::VRegionAnnotation::try_from(
+                        &conserved_residues,
+                        &reference_alignment.alignment,
+                    )
+                    .map_err(anyhow::Error::from)
+                });
+            Ok((vregions?, reference_alignment))
         })
         .flat_map(report_error)
-        .map(
-            |(conserved_residues, reference_alignment)| -> Result<_, imgt::regions::AnnotationError> {
-                trace!(query_seq = reference_alignment.query_record.id(), "Creating VREGION annotation.");
-                Ok((
-                    imgt::annotations::VRegionAnnotation::try_from(&conserved_residues, &reference_alignment.alignment)?,
-                    reference_alignment,
-                ))
-            },
-        )
-        .flat_map(report_error)
-        .collect();
-
-    if args.only_regions {
-        let mut writer = fasta::Writer::new(std::io::stdout());
-
-        vregion_annotations
-            .into_iter()
-            .map(|(vregion_annotation, reference_alignment)| -> Vec<_> {
+        .for_each(|(vregion_annotation, reference_alignment)| {
+            if args.only_regions {
                 trace!(
                     query_seq = reference_alignment.query_record.id(),
                     "Applying annotations."
                 );
-                vregion_annotation
-                    .into_iter()
-                    .map(|ann| {
-                        imgt::annotations::apply_annotation(&reference_alignment.query_record, &ann)
-                    })
-                    .collect()
-            })
-            .flatten()
-            .for_each(|record| {
-                writer
-                    .write_record(&record)
-                    .expect("Could not write record.")
-            });
-    }
+                write_vregion_annotations(
+                    &reference_alignment.query_record,
+                    &vregion_annotation,
+                    std::io::stderr(),
+                )
+            }
+        });
+}
+
+/// Apply all annotations of the a vregion to a record and write them to a writer.
+fn write_vregion_annotations<W: std::io::Write>(
+    record: &fasta::Record,
+    vregion_annotation: &imgt::annotations::VRegionAnnotation,
+    writer: W,
+) {
+    let mut fasta_writer = fasta::Writer::new(writer);
+    vregion_annotation
+        .clone()
+        .into_iter()
+        .map(|ann| imgt::annotations::apply_annotation(&record, &ann))
+        .for_each(|record| {
+            fasta_writer
+                .write_record(&record)
+                .expect("Could not write record.")
+        });
 }

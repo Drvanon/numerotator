@@ -567,6 +567,7 @@ dependencies = [
 name = "numerator"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "bio",
  "clap",
  "itertools 0.11.0",

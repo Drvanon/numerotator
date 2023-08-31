@@ -6,6 +6,7 @@ use super::{
     ConservedResidues,
 };
 
+/// Error caused when annotating a region.
 #[derive(Debug, Error, Clone)]
 pub enum AnnotationError {
     #[error("Region '{0}' and '{0}' overlapped.")]
@@ -13,6 +14,9 @@ pub enum AnnotationError {
 }
 
 impl FrameworkAnnotation {
+    /// Try to create the framework annotations.
+    ///
+    /// Alignment assumes that sequence x was an IMGT reference sequence.
     fn try_from(
         conserved_residues: &ConservedResidues,
         alignment: &Alignment,
@@ -85,6 +89,8 @@ impl FrameworkAnnotation {
 
 impl TryFrom<FrameworkAnnotation> for CDRAnnotation {
     type Error = AnnotationError;
+
+    /// Try to create the framework annotations.
     fn try_from(framework_annotation: FrameworkAnnotation) -> Result<Self, Self::Error> {
         let cdr1 = Annotation {
             start: framework_annotation.fr1.end,
@@ -109,6 +115,7 @@ impl TryFrom<FrameworkAnnotation> for CDRAnnotation {
 }
 
 impl VRegionAnnotation {
+    /// Try to create a VREGION annotation from the positions of conserved residues and an alignment.
     pub fn try_from(
         conserved_residues: &ConservedResidues,
         alignment: &Alignment,
