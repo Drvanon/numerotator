@@ -10,6 +10,7 @@ use itertools::Itertools;
 
 pub mod annotations;
 pub mod regions;
+pub mod single_letter_annotations;
 
 /// Container for the positions of a sequence that correspond with IMGT conserved residues in the VREGION.
 #[derive(Clone)]
@@ -38,6 +39,12 @@ pub fn count_gaps_in_sequence_before_index(sequence: &[u8], index: usize) -> usi
 pub enum IMGTError {
     #[error("Alignment did not have conserved residues in expected places.")]
     InvalidAlignment,
+
+    #[error("Unexpected length ({1}) for region '{0}'.")]
+    RegionTooLong(String, usize),
+
+    #[error("CDR3 region too short. Expected at least 5, got {0}")]
+    CDR3TooShort(usize),
 }
 
 /// Find the position in the alignment sequence that corresponds to a given position.
@@ -72,7 +79,8 @@ pub enum TransferErr {
 impl ConservedResidues {
     /// Confirm that an alignment sequence is a valid IMGT reference sequence.
     ///
-    /// The alignment sequence should be of the shap "ABC-DE".
+    /// The alignment sequence should be of the shap "ABC-DE", similar to what you
+    /// would find in a single line of a stockholm file.
     pub fn is_valid_alignment(alignment: &[u8]) -> bool {
         let (&aa_23, &aa_41, &aa_89, &aa_104, &aa_118) = match alignment
             .into_iter()
@@ -143,8 +151,9 @@ impl ConservedResidues {
     }
 }
 
-// TODO: Write a proper stockholm reader.
+/// Load the precomputed and curated vconserved residues associated.
 pub fn initialize_conserved_residues() -> HashMap<&'static str, ConservedResidues> {
+    // TODO: Write a proper stockholm reader.
     let stockholm_data = include_str!("../data/reference.stockholm");
     stockholm_data
         .split_ascii_whitespace()
@@ -161,6 +170,7 @@ pub fn initialize_conserved_residues() -> HashMap<&'static str, ConservedResidue
         .collect()
 }
 
+/// Load the curated reference sequences.
 pub fn initialize_ref_seqs() -> Vec<fasta::Record> {
     fasta::Reader::new(std::io::Cursor::new(include_bytes!(
         "../data/reference.fasta"

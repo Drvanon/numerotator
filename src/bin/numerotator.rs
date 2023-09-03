@@ -44,6 +44,7 @@ fn find_best_reference_sequence(
     record: fasta::Record,
     ref_seqs: &Vec<fasta::Record>,
 ) -> Result<ReferenceAlignment, RefSeqErr> {
+    trace!(query_seq = record.id(), "Finding reference sequence.");
     // TODO: Optimize settings.
     // Settings taken from rust bio example. Fully unoptimized.
     let mut aligner =
@@ -128,10 +129,7 @@ fn main() {
 
     sequences_from_command_line
         .chain(sequences_from_sequence_file.into_iter().flatten())
-        .map(|query_seq| {
-            trace!(query_seq = query_seq.id(), "Finding reference sequence.");
-            find_best_reference_sequence(query_seq, &ref_seqs)
-        })
+        .map(|query_seq|  find_best_reference_sequence(query_seq, &ref_seqs) )
         .flat_map(report_error)
         .map(|reference_alignment| -> Result<(VRegionAnnotation, ReferenceAlignment), anyhow::Error> {
             let reference_conserved_residues = all_conserved_residues
@@ -142,23 +140,7 @@ fn main() {
                 alignment = format!("{:?}", reference_alignment.alignment.path()),
                 "Transferring reference alignment."
             );
-            let vregions = reference_conserved_residues
-                .transfer(
-                    &reference_alignment.alignment,
-                    reference_alignment.query_record.seq(),
-                )
-                .map_err(anyhow::Error::from)
-                .and_then(|conserved_residues| {
-                    trace!(
-                        query_seq = reference_alignment.query_record.id(),
-                        "Creating VREGION annotation."
-                    );
-                    imgt::annotations::VRegionAnnotation::try_from(
-                        &conserved_residues,
-                        &reference_alignment.alignment,
-                    )
-                    .map_err(anyhow::Error::from)
-                });
+            let vregions = transfer_conserved_residues(reference_conserved_residues, &reference_alignment);
             Ok((vregions?, reference_alignment))
         })
         .flat_map(report_error)
@@ -171,10 +153,34 @@ fn main() {
                 write_vregion_annotations(
                     &reference_alignment.query_record,
                     &vregion_annotation,
-                    std::io::stderr(),
+                    std::io::stdout(),
                 )
             }
         });
+}
+
+fn transfer_conserved_residues(
+    reference_conserved_residues: &imgt::ConservedResidues,
+    reference_alignment: &ReferenceAlignment,
+) -> Result<VRegionAnnotation, anyhow::Error> {
+    let vregions = reference_conserved_residues
+        .transfer(
+            &reference_alignment.alignment,
+            reference_alignment.query_record.seq(),
+        )
+        .map_err(anyhow::Error::from)
+        .and_then(|conserved_residues| {
+            trace!(
+                query_seq = reference_alignment.query_record.id(),
+                "Creating VREGION annotation."
+            );
+            imgt::annotations::VRegionAnnotation::try_from(
+                &conserved_residues,
+                &reference_alignment.alignment,
+            )
+            .map_err(anyhow::Error::from)
+        });
+    vregions
 }
 
 /// Apply all annotations of the a vregion to a record and write them to a writer.
