@@ -45,6 +45,9 @@ pub enum IMGTError {
 
     #[error("CDR3 region too short. Expected at least 5, got {0}")]
     CDR3TooShort(usize),
+
+    #[error("Region '{0}' and '{0}' overlapped.")]
+    OverlappingRegions(String, String),
 }
 
 /// Find the position in the alignment sequence that corresponds to a given position.

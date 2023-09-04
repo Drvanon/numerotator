@@ -1,17 +1,9 @@
 use bio::alignment::{Alignment, AlignmentOperation};
-use thiserror::Error;
 
 use super::{
     annotations::{Annotation, CDRAnnotation, FrameworkAnnotation, VRegionAnnotation},
-    ConservedResidues,
+    ConservedResidues, IMGTError,
 };
-
-/// Error caused when annotating a region.
-#[derive(Debug, Error, Clone)]
-pub enum AnnotationError {
-    #[error("Region '{0}' and '{0}' overlapped.")]
-    OverlappingRegions(String, String),
-}
 
 impl FrameworkAnnotation {
     /// Try to create the framework annotations.
@@ -20,8 +12,8 @@ impl FrameworkAnnotation {
     fn try_from(
         conserved_residues: &ConservedResidues,
         alignment: &Alignment,
-    ) -> Result<Self, AnnotationError> {
-        let v_region_start = alignment
+    ) -> Result<Self, IMGTError> {
+        let v_region_start_position = alignment
             .path()
             .into_iter()
             .find(|(x, _, op)| {
@@ -33,8 +25,10 @@ impl FrameworkAnnotation {
                     }
             })
             .expect("First amino acid should be in path.")
-            .1
-            - 1;
+            .1;
+
+        // bio::alignment::Alignment::path uses 1 based indexing.
+        let v_region_start = v_region_start_position - 1;
 
         let v_region_end = alignment
             .path()
@@ -72,23 +66,33 @@ impl FrameworkAnnotation {
         };
 
         if fr1.end > fr2.start {
-            return Err(AnnotationError::OverlappingRegions(fr1.name, fr2.name));
+            return Err(IMGTError::OverlappingRegions(fr1.name, fr2.name));
         }
 
         if fr2.end > fr3.start {
-            return Err(AnnotationError::OverlappingRegions(fr2.name, fr3.name));
-        }
+            return Err(IMGTError::OverlappingRegions(fr2.name, fr3.name));
+        };
 
         if fr3.end > fr4.start {
-            return Err(AnnotationError::OverlappingRegions(fr3.name, fr4.name));
+            return Err(IMGTError::OverlappingRegions(fr3.name, fr4.name));
         }
 
         Ok(Self { fr1, fr2, fr3, fr4 })
     }
+
+    pub fn get_cdr1_length(&self) -> usize {
+        self.fr2.start - self.fr1.end
+    }
+    pub fn get_cdr2_length(&self) -> usize {
+        self.fr3.start - self.fr2.end
+    }
+    pub fn get_cdr3_length(&self) -> usize {
+        self.fr4.start - self.fr3.end
+    }
 }
 
 impl TryFrom<FrameworkAnnotation> for CDRAnnotation {
-    type Error = AnnotationError;
+    type Error = IMGTError;
 
     /// Try to create the framework annotations.
     fn try_from(framework_annotation: FrameworkAnnotation) -> Result<Self, Self::Error> {
@@ -119,7 +123,7 @@ impl VRegionAnnotation {
     pub fn try_from(
         conserved_residues: &ConservedResidues,
         alignment: &Alignment,
-    ) -> Result<Self, AnnotationError> {
+    ) -> Result<Self, IMGTError> {
         let framework_annotation = FrameworkAnnotation::try_from(conserved_residues, alignment)?;
         let cdr_annotation = CDRAnnotation::try_from(framework_annotation.clone())?;
         Ok(Self {
