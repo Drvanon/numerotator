@@ -1,10 +1,13 @@
+use super::annotations::{Annotation, VRegionAnnotation};
 use super::IMGTError;
+use bio::alignment::Alignment;
 /// Numbering of single amino acids.
 ///
 /// Mapping according to [this](https://www.imgt.org/IMGTScientificChart/Numbering/IMGTIGVLsuperfamily.html) IMGT scientific chart.
 use std::collections::HashMap;
 
-fn number_cdr1(cdr1_size: usize) -> Result<Vec<String>, IMGTError> {
+fn number_cdr1(start: usize, end: usize) -> Result<Vec<Annotation>, IMGTError> {
+    let cdr1_size = end - start;
     let cdr1_length_ranges_mapping: HashMap<usize, Vec<usize>> = [
         (12, vec![27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38]),
         (11, vec![27, 28, 29, 30, 31, 32, 34, 35, 36, 37, 38]),
@@ -23,10 +26,17 @@ fn number_cdr1(cdr1_size: usize) -> Result<Vec<String>, IMGTError> {
         .ok_or(IMGTError::RegionTooLong("CDR1-IMGT".to_string(), cdr1_size))?
         .into_iter()
         .map(|number| number.to_string())
+        .zip(start..end)
+        .map(|(name, position)| Annotation {
+            start: position,
+            end: position + 1,
+            name,
+        })
         .collect())
 }
 
-fn number_cdr2(cdr2_size: usize) -> Result<Vec<String>, IMGTError> {
+fn number_cdr2(start: usize, end: usize) -> Result<Vec<Annotation>, IMGTError> {
+    let cdr2_size = end - start;
     let cdr2_length_ranges_mapping: HashMap<usize, Vec<usize>> = [
         (10, vec![56, 57, 58, 59, 60, 61, 62, 63, 64, 65]),
         (9, vec![56, 57, 58, 59, 60, 62, 63, 64, 65]),
@@ -48,10 +58,17 @@ fn number_cdr2(cdr2_size: usize) -> Result<Vec<String>, IMGTError> {
         .ok_or(IMGTError::RegionTooLong("CDR2-IMGT".to_string(), cdr2_size))?
         .into_iter()
         .map(|number| number.to_string())
+        .zip(start..end)
+        .map(|(name, position)| Annotation {
+            start: position,
+            end: position + 1,
+            name,
+        })
         .collect())
 }
 
-fn number_cdr3(cdr3_size: usize) -> Result<Vec<String>, IMGTError> {
+fn number_cdr3(start: usize, end: usize) -> Result<Vec<Annotation>, IMGTError> {
+    let cdr3_size = end - start;
     if cdr3_size < 5 {
         return Err(IMGTError::CDR3TooShort(cdr3_size));
     }
@@ -87,6 +104,12 @@ fn number_cdr3(cdr3_size: usize) -> Result<Vec<String>, IMGTError> {
             .unwrap()
             .into_iter()
             .map(|number| number.to_string())
+            .zip(start..end)
+            .map(|(name, position)| Annotation {
+                start: position,
+                end: position + 1,
+                name,
+            })
             .collect());
     }
 
@@ -95,15 +118,18 @@ fn number_cdr3(cdr3_size: usize) -> Result<Vec<String>, IMGTError> {
         .chain(additional_positions_between_111_and_112(cdr3_size).into_iter())
         .chain((113..117).map(|number| number.to_string()))
         .map(|number| number.to_string())
+        .zip(start..end)
+        .map(|(name, position)| Annotation {
+            start: position,
+            end: position + 1,
+            name,
+        })
         .collect())
 }
 
 /// Additional positions between 111 and 112 in the CDR3-IMGT region.
-fn additional_positions_between_111_and_112(cdr3_size: usize) -> Vec<String> {
-    if cdr3_size < 13 {
-        return Vec::new();
-    }
-    let n_extra_positions = cdr3_size - 13;
+fn additional_positions_between_111_and_112(start: usize, end: usize) -> Vec<Annotation> {
+    let n_extra_positions = end - start;
     let n_extra_positions_111 = (n_extra_positions as f64 / 2.0).floor() as usize;
     let n_extra_positions_112 = (n_extra_positions as f64 / 2.0).ceil() as usize;
 
@@ -115,5 +141,17 @@ fn additional_positions_between_111_and_112(cdr3_size: usize) -> Vec<String> {
         .map(|i| format!("112.{}", i))
         .rev();
 
-    extra_positions_111.chain(extra_positions_112).collect()
+    extra_positions_111
+        .chain(extra_positions_112)
+        .zip(start..end)
+        .map(|(name, position)| Annotation {
+            start: position,
+            end: position + 1,
+            name,
+        })
+        .collect()
+}
+
+impl VRegionAnnotation {
+    fn number_regions(&self, alignment: Alignment) -> Result<Vec<Annotation>, IMGTError> {}
 }
