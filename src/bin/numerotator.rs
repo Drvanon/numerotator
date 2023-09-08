@@ -3,7 +3,11 @@ use bio::{
     io::fasta,
 };
 use clap::{value_parser, Parser};
-use numerator::imgt::{self, annotations::VRegionAnnotation};
+use numerotator::imgt::{
+    self,
+    annotations::{Annotation, VRegionAnnotation},
+    find_best_reference_sequence, ReferenceAlignment,
+};
 use std::path::PathBuf;
 use thiserror::Error;
 use tracing::{debug, error, info, trace, Level};

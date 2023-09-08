@@ -1,6 +1,6 @@
 use clap::{value_parser, Parser};
 use itertools::Itertools;
-use numerator::imgt;
+use numerotator::imgt;
 use tracing::{debug, info, Level};
 use tracing_subscriber::FmtSubscriber;
 
