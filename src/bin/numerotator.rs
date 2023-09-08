@@ -1,7 +1,4 @@
-use bio::{
-    alignment::{self, Alignment},
-    io::fasta,
-};
+use bio::io::fasta;
 use clap::{value_parser, Parser};
 use numerotator::imgt::{
     self,
@@ -9,7 +6,6 @@ use numerotator::imgt::{
     find_best_reference_sequence, ReferenceAlignment,
 };
 use std::path::PathBuf;
-use thiserror::Error;
 use tracing::{debug, error, info, trace, Level};
 use tracing_subscriber::FmtSubscriber;
 
@@ -21,63 +17,15 @@ struct Args {
     #[arg(short, long, value_parser=value_parser!(PathBuf))]
     sequences_file: Option<PathBuf>,
 
-    #[arg(short, long)]
-    only_regions: bool,
-}
+    #[arg(short, long, help = "Annotate the regions as well.")]
+    annotate_regions: bool,
 
-/// Error thrown when looking for a reference sequence.
-#[derive(Debug, Error)]
-pub enum RefSeqErr {
-    #[error("Could not find reference record for record {0}")]
-    NoReferenceSequenceFound(fasta::Record),
-}
-
-/// Captures an alignment of a query sequence to reference sequence.
-///
-/// Uses records to keep track of identities. (For the reference this
-/// is particularly important since often you will want to look up the
-/// associated curated alignment.)
-struct ReferenceAlignment {
-    reference_record: fasta::Record,
-    query_record: fasta::Record,
-    alignment: Alignment,
-}
-
-/// Find the record that produces the best alignment.
-fn find_best_reference_sequence(
-    record: fasta::Record,
-    ref_seqs: &Vec<fasta::Record>,
-) -> Result<ReferenceAlignment, RefSeqErr> {
-    trace!(query_seq = record.id(), "Finding reference sequence.");
-    // TODO: Optimize settings.
-    // Settings taken from rust bio example. Fully unoptimized.
-    let mut aligner =
-        alignment::pairwise::Aligner::new(-5, -1, |a, b| if a == b { 1i32 } else { -1i32 });
-
-    // TODO: Optimize this to go by alignment block!
-    ref_seqs
-        .into_iter()
-        .map(|reference_record| {
-            (
-                reference_record,
-                aligner.local(reference_record.seq(), record.seq()),
-            )
-        })
-        .max_by_key(|(_reference, alignment)| alignment.score)
-        .map(|(reference_record, alignment)| {
-            trace!(
-                score = alignment.score,
-                reference = reference_record.id(),
-                "Found alignment."
-            );
-            ReferenceAlignment {
-                // Cloning here should not be a huge problem, since we only clone once per query sequence.
-                reference_record: reference_record.clone(),
-                alignment,
-                query_record: record.clone(),
-            }
-        })
-        .ok_or(RefSeqErr::NoReferenceSequenceFound(record))
+    #[arg(
+        short,
+        long,
+        help = "Do not number the sequences. (Useful in combination with --annotate-regions)"
+    )]
+    no_number: bool,
 }
 
 fn report_error<OkType, ErrType: std::fmt::Display>(
@@ -149,16 +97,30 @@ fn main() {
         })
         .flat_map(report_error)
         .for_each(|(vregion_annotation, reference_alignment)| {
-            if args.only_regions {
+            if args.annotate_regions {
                 trace!(
                     query_seq = reference_alignment.query_record.id(),
-                    "Applying annotations."
+                    "Applying region annotations."
                 );
-                write_vregion_annotations(
+                write_annotations(
                     &reference_alignment.query_record,
-                    &vregion_annotation,
+                    vregion_annotation.region_annotations(),
                     std::io::stdout(),
-                )
+                );
+            }
+
+            if !args.no_number {
+                trace!("Applying numbering.");
+                let number_annotations =  vregion_annotation.number_regions(&reference_alignment);
+                match number_annotations {
+                    Ok(annotations) => {
+                        write_annotations(&reference_alignment.query_record, annotations , std::io::stdout())
+                    },
+                    Err(error) => {
+                        error!(sequence = reference_alignment.query_record.id(), error=error.to_string(), "Could not number regions for sequence.");
+                    }
+                }
+                                
             }
         });
 }
@@ -188,14 +150,13 @@ fn transfer_conserved_residues(
 }
 
 /// Apply all annotations of the a vregion to a record and write them to a writer.
-fn write_vregion_annotations<W: std::io::Write>(
+fn write_annotations<W: std::io::Write>(
     record: &fasta::Record,
-    vregion_annotation: &imgt::annotations::VRegionAnnotation,
+    annotations: Vec<Annotation>,
     writer: W,
 ) {
     let mut fasta_writer = fasta::Writer::new(writer);
-    vregion_annotation
-        .clone()
+    annotations
         .into_iter()
         .map(|ann| imgt::annotations::apply_annotation(&record, &ann))
         .for_each(|record| {

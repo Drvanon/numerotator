@@ -11,8 +11,17 @@ pub struct Annotation {
 /// Create a new record for the subsequence that the annotation references in a given record.
 pub fn apply_annotation(record: &fasta::Record, annotation: &Annotation) -> fasta::Record {
     fasta::Record::with_attrs(
-        format!("{}_{}", record.id(), annotation.name).as_str(),
-        Some(format!("{} of {}", annotation.name, record.id()).as_str()),
+        format!("{}_{}", annotation.name, record.id()).as_str(),
+        Some(
+            format!(
+                "IMGT Number {} on {}|{}|{}",
+                annotation.name,
+                record.id(),
+                annotation.start,
+                annotation.end
+            )
+            .as_str(),
+        ),
         &record.seq()[annotation.start..annotation.end],
     )
 }
@@ -60,21 +69,16 @@ pub struct VRegionAnnotation {
     pub framework_annotation: FrameworkAnnotation,
 }
 
-impl IntoIterator for VRegionAnnotation {
-    type Item = Annotation;
-
-    type IntoIter = std::vec::IntoIter<Self::Item>;
-
-    fn into_iter(self) -> Self::IntoIter {
+impl VRegionAnnotation {
+    pub fn region_annotations(&self) -> Vec<Annotation> {
         vec![
-            self.framework_annotation.fr1,
-            self.cdr_annotation.cdr1,
-            self.framework_annotation.fr2,
-            self.cdr_annotation.cdr2,
-            self.framework_annotation.fr3,
-            self.cdr_annotation.cdr3,
-            self.framework_annotation.fr4,
+            self.framework_annotation.fr1.clone(),
+            self.cdr_annotation.cdr1.clone(),
+            self.framework_annotation.fr2.clone(),
+            self.cdr_annotation.cdr2.clone(),
+            self.framework_annotation.fr3.clone(),
+            self.cdr_annotation.cdr3.clone(),
+            self.framework_annotation.fr4.clone(),
         ]
-        .into_iter()
     }
 }

@@ -1,9 +1,13 @@
-use super::annotations::{Annotation, VRegionAnnotation};
-use super::IMGTError;
-use bio::alignment::Alignment;
+use bio::alignment::AlignmentOperation;
+
 /// Numbering of single amino acids.
 ///
 /// Mapping according to [this](https://www.imgt.org/IMGTScientificChart/Numbering/IMGTIGVLsuperfamily.html) IMGT scientific chart.
+use super::annotations::{Annotation, VRegionAnnotation};
+use super::{
+    IMGTError, ReferenceAlignment, CDR1_START, CDR2_START, CDR3_START, FR1_START, FR2_START,
+    FR3_START, FR4_END, FR4_START,
+};
 use std::collections::HashMap;
 
 fn number_cdr1(start: usize, end: usize) -> Result<Vec<Annotation>, IMGTError> {
@@ -113,17 +117,24 @@ fn number_cdr3(start: usize, end: usize) -> Result<Vec<Annotation>, IMGTError> {
             .collect());
     }
 
-    Ok((105..=111)
-        .map(|number| number.to_string())
-        .chain(additional_positions_between_111_and_112(cdr3_size).into_iter())
-        .chain((113..117).map(|number| number.to_string()))
-        .map(|number| number.to_string())
-        .zip(start..end)
-        .map(|(name, position)| Annotation {
+    // TODO: extract this range-zip-map stuff to a function for DRY.
+    Ok((CDR3_START..=111)
+        .zip(start..start + 6)
+        .map(|(number, position)| Annotation {
             start: position,
             end: position + 1,
-            name,
+            name: number.to_string(),
         })
+        .chain(additional_positions_between_111_and_112(start + 6, end - 5).into_iter())
+        .chain(
+            (113..FR4_START)
+                .zip(end - 5..end)
+                .map(|(number, position)| Annotation {
+                    start: position,
+                    end: position + 1,
+                    name: number.to_string(),
+                }),
+        )
         .collect())
 }
 
@@ -152,6 +163,65 @@ fn additional_positions_between_111_and_112(start: usize, end: usize) -> Vec<Ann
         .collect()
 }
 
+fn number_framework(
+    reference_alignment: &ReferenceAlignment,
+    framework_start: usize,
+    framework_end: usize,
+) -> Vec<Annotation> {
+    reference_alignment
+        .alignment
+        .path()
+        .into_iter()
+        .filter(|(x, _y, _op)| (framework_start <= *x) && (*x < framework_end))
+        .flat_map(|(x, y, op)| match op {
+            AlignmentOperation::Match => Some((x, y)),
+            AlignmentOperation::Subst => Some((x, y)),
+            AlignmentOperation::Del => None,
+            AlignmentOperation::Ins => None,
+            AlignmentOperation::Xclip(_) => None,
+            AlignmentOperation::Yclip(_) => None,
+        })
+        .map(|(number, position)| Annotation {
+            // Path starts at one, where as annotations are zero based.
+            start: position - 1,
+            end: position,
+            name: number.to_string(),
+        })
+        .collect()
+}
+
 impl VRegionAnnotation {
-    fn number_regions(&self, alignment: Alignment) -> Result<Vec<Annotation>, IMGTError> {}
+    pub fn number_regions(
+        &self,
+        reference_alignment: &ReferenceAlignment,
+    ) -> Result<Vec<Annotation>, IMGTError> {
+        Ok(
+            number_framework(&reference_alignment, FR1_START, CDR1_START)
+                .into_iter()
+                .chain(
+                    number_cdr1(self.cdr_annotation.cdr1.start, self.cdr_annotation.cdr1.end)?
+                        .into_iter(),
+                )
+                .chain(number_framework(
+                    &reference_alignment,
+                    FR2_START,
+                    CDR2_START,
+                ))
+                .chain(
+                    number_cdr2(self.cdr_annotation.cdr2.start, self.cdr_annotation.cdr2.end)?
+                        .into_iter(),
+                )
+                .chain(number_framework(
+                    &reference_alignment,
+                    FR3_START,
+                    CDR3_START,
+                ))
+                .chain(
+                    number_cdr3(self.cdr_annotation.cdr3.start, self.cdr_annotation.cdr3.end)?
+                        .into_iter(),
+                )
+                .chain(number_framework(&reference_alignment, FR4_START, FR4_END))
+                .collect(),
+        )
+    }
 }

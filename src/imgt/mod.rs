@@ -1,4 +1,5 @@
 use thiserror::Error;
+use tracing::trace;
 
 use std::collections::HashMap;
 
@@ -9,8 +10,18 @@ use bio::{
 use itertools::Itertools;
 
 pub mod annotations;
+pub mod reference;
 pub mod regions;
 pub mod single_letter_annotations;
+
+const FR1_START: usize = 1;
+const CDR1_START: usize = 27;
+const FR2_START: usize = 39;
+const CDR2_START: usize = 56;
+const FR3_START: usize = 66;
+const CDR3_START: usize = 105;
+const FR4_START: usize = 118;
+const FR4_END: usize = 128;
 
 /// Container for the positions of a sequence that correspond with IMGT conserved residues in the VREGION.
 #[derive(Clone)]
@@ -181,6 +192,61 @@ pub fn initialize_ref_seqs() -> Vec<fasta::Record> {
     .records()
     .map(|record_result| record_result.expect("Reference records should be valid."))
     .collect()
+}
+
+/// Error thrown when looking for a reference sequence.
+#[derive(Debug, Error)]
+pub enum RefSeqErr {
+    #[error("Could not find reference record for record {0}")]
+    NoReferenceSequenceFound(fasta::Record),
+}
+
+/// Captures an alignment of a query sequence to reference sequence.
+///
+/// Uses records to keep track of identities. (For the reference this
+/// is particularly important since often you will want to look up the
+/// associated curated alignment.)
+pub struct ReferenceAlignment {
+    pub reference_record: fasta::Record,
+    pub query_record: fasta::Record,
+    pub alignment: Alignment,
+}
+
+/// Find the record that produces the best alignment.
+pub fn find_best_reference_sequence(
+    record: fasta::Record,
+    ref_seqs: &Vec<fasta::Record>,
+) -> Result<ReferenceAlignment, RefSeqErr> {
+    trace!(query_seq = record.id(), "Finding reference sequence.");
+    // TODO: Optimize settings.
+    // Settings taken from rust bio example. Fully unoptimized.
+    let mut aligner =
+        bio::alignment::pairwise::Aligner::new(-5, -1, |a, b| if a == b { 1i32 } else { -1i32 });
+
+    // TODO: Optimize this to go by alignment block!
+    ref_seqs
+        .into_iter()
+        .map(|reference_record| {
+            (
+                reference_record,
+                aligner.local(reference_record.seq(), record.seq()),
+            )
+        })
+        .max_by_key(|(_reference, alignment)| alignment.score)
+        .map(|(reference_record, alignment)| {
+            trace!(
+                score = alignment.score,
+                reference = reference_record.id(),
+                "Found alignment."
+            );
+            ReferenceAlignment {
+                // Cloning here should not be a huge problem, since we only clone once per query sequence.
+                reference_record: reference_record.clone(),
+                alignment,
+                query_record: record.clone(),
+            }
+        })
+        .ok_or(RefSeqErr::NoReferenceSequenceFound(record))
 }
 
 #[cfg(test)]
