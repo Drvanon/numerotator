@@ -9,9 +9,16 @@ use self::{conserved_residues::ConservedResidues, reference::ReferenceSequence};
 
 pub mod annotations;
 pub mod conserved_residues;
+pub mod numbering;
 pub mod reference;
 pub mod regions;
-pub mod single_letter_annotations;
+
+pub enum Framework {
+    FR1,
+    FR2,
+    FR3,
+    FR4,
+}
 
 const FR1_START: usize = 1;
 const CDR1_START: usize = 27;
@@ -21,6 +28,11 @@ const FR3_START: usize = 66;
 const CDR3_START: usize = 105;
 const FR4_START: usize = 118;
 const FR4_END: usize = 128;
+
+const FR1: std::ops::Range<usize> = FR1_START..CDR1_START;
+const FR2: std::ops::Range<usize> = FR2_START..CDR2_START;
+const FR3: std::ops::Range<usize> = FR3_START..CDR3_START;
+const FR4: std::ops::Range<usize> = FR4_START..FR4_END;
 
 /// Error for when
 #[derive(Debug, Error)]

@@ -4,10 +4,8 @@ use bio::alignment::AlignmentOperation;
 ///
 /// Mapping according to [this](https://www.imgt.org/IMGTScientificChart/Numbering/IMGTIGVLsuperfamily.html) IMGT scientific chart.
 use super::annotations::{Annotation, VRegionAnnotation};
-use super::{
-    IMGTError, ReferenceAlignment, CDR1_START, CDR2_START, CDR3_START, FR1_START, FR2_START,
-    FR3_START, FR4_END, FR4_START,
-};
+use super::{IMGTError, ReferenceAlignment};
+use crate::imgt;
 use std::collections::HashMap;
 
 fn number_cdr1(start: usize, end: usize) -> Result<Vec<Annotation>, IMGTError> {
@@ -118,7 +116,7 @@ fn number_cdr3(start: usize, end: usize) -> Result<Vec<Annotation>, IMGTError> {
     }
 
     // TODO: extract this range-zip-map stuff to a function for DRY.
-    Ok((CDR3_START..=111)
+    Ok((imgt::CDR3_START..=111)
         .zip(start..start + 6)
         .map(|(number, position)| Annotation {
             start: position,
@@ -127,7 +125,7 @@ fn number_cdr3(start: usize, end: usize) -> Result<Vec<Annotation>, IMGTError> {
         })
         .chain(additional_positions_between_111_and_112(start + 6, end - 5).into_iter())
         .chain(
-            (113..FR4_START)
+            (113..imgt::FR4_START)
                 .zip(end - 5..end)
                 .map(|(number, position)| Annotation {
                     start: position,
@@ -165,23 +163,34 @@ fn additional_positions_between_111_and_112(start: usize, end: usize) -> Vec<Ann
 
 fn number_framework(
     reference_alignment: &ReferenceAlignment,
-    framework_start: usize,
-    framework_end: usize,
+    framework: imgt::Framework,
 ) -> Vec<Annotation> {
-    let reference_vregion_annotation = reference_alignment.reference.get_vregion_annotation();
+    let range = match framework {
+        imgt::Framework::FR1 => imgt::FR1,
+        imgt::Framework::FR2 => imgt::FR2,
+        imgt::Framework::FR3 => imgt::FR3,
+        imgt::Framework::FR4 => imgt::FR4,
+    };
+    let numbers = range.clone().filter(|pos| {
+        reference_alignment
+            .reference
+            .get_missing_positions_in_framework(&framework)
+            .contains(pos)
+    });
     reference_alignment
         .alignment
         .path()
         .into_iter()
-        .filter(|(x, _y, _op)| (framework_start <= *x) && (*x < framework_end))
-        .flat_map(|(x, y, op)| match op {
-            AlignmentOperation::Match => Some((x, y)),
-            AlignmentOperation::Subst => Some((x, y)),
+        .filter(|(x, _y, _op)| range.contains(&x))
+        .flat_map(|(_x, y, op)| match op {
+            AlignmentOperation::Match => Some(y),
+            AlignmentOperation::Subst => Some(y),
             AlignmentOperation::Del => None,
             AlignmentOperation::Ins => None,
             AlignmentOperation::Xclip(_) => None,
             AlignmentOperation::Yclip(_) => None,
         })
+        .zip(numbers)
         .map(|(number, position)| Annotation {
             // Path starts at one, where as annotations are zero based.
             start: position - 1,
@@ -196,33 +205,23 @@ impl VRegionAnnotation {
         &self,
         reference_alignment: &ReferenceAlignment,
     ) -> Result<Vec<Annotation>, IMGTError> {
-        Ok(
-            number_framework(&reference_alignment, FR1_START, CDR1_START)
-                .into_iter()
-                .chain(
-                    number_cdr1(self.cdr_annotation.cdr1.start, self.cdr_annotation.cdr1.end)?
-                        .into_iter(),
-                )
-                .chain(number_framework(
-                    &reference_alignment,
-                    FR2_START,
-                    CDR2_START,
-                ))
-                .chain(
-                    number_cdr2(self.cdr_annotation.cdr2.start, self.cdr_annotation.cdr2.end)?
-                        .into_iter(),
-                )
-                .chain(number_framework(
-                    &reference_alignment,
-                    FR3_START,
-                    CDR3_START,
-                ))
-                .chain(
-                    number_cdr3(self.cdr_annotation.cdr3.start, self.cdr_annotation.cdr3.end)?
-                        .into_iter(),
-                )
-                .chain(number_framework(&reference_alignment, FR4_START, FR4_END))
-                .collect(),
-        )
+        Ok(number_framework(&reference_alignment, imgt::Framework::FR1)
+            .into_iter()
+            .chain(
+                number_cdr1(self.cdr_annotation.cdr1.start, self.cdr_annotation.cdr1.end)?
+                    .into_iter(),
+            )
+            .chain(number_framework(&reference_alignment, imgt::Framework::FR2))
+            .chain(
+                number_cdr2(self.cdr_annotation.cdr2.start, self.cdr_annotation.cdr2.end)?
+                    .into_iter(),
+            )
+            .chain(number_framework(&reference_alignment, imgt::Framework::FR3))
+            .chain(
+                number_cdr3(self.cdr_annotation.cdr3.start, self.cdr_annotation.cdr3.end)?
+                    .into_iter(),
+            )
+            .chain(number_framework(&reference_alignment, imgt::Framework::FR4))
+            .collect())
     }
 }

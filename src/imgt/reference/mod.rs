@@ -64,37 +64,21 @@ impl ReferenceSequence {
             .collect()
     }
 
-    pub fn get_missing_positions_in_fr1(&self) -> Vec<usize> {
-        self.alignment[(imgt::FR1_START - 1)..(imgt::CDR1_START)]
+    pub fn get_missing_positions_in_framework(&self, framework: &imgt::Framework) -> Vec<usize> {
+        let range = match framework {
+            imgt::Framework::FR1 => imgt::FR1,
+            imgt::Framework::FR2 => imgt::FR2,
+            imgt::Framework::FR3 => imgt::FR3,
+            imgt::Framework::FR4 => imgt::FR4,
+        };
+
+        self.alignment[(range.start - 1)..range.end]
             .chars()
-            .zip(imgt::FR1_START..imgt::CDR1_START)
+            .zip(range)
             .flat_map(|(c, pos)| (c == '-').then_some(pos))
             .collect()
     }
 
-    pub fn get_missing_positions_in_fr2(&self) -> Vec<usize> {
-        self.alignment[(imgt::FR2_START - 1)..(imgt::CDR2_START)]
-            .chars()
-            .zip(imgt::FR2_START..imgt::CDR2_START)
-            .flat_map(|(c, pos)| (c == '-').then_some(pos))
-            .collect()
-    }
-
-    pub fn get_missing_positions_in_fr3(&self) -> Vec<usize> {
-        self.alignment[(imgt::FR3_START - 1)..(imgt::CDR3_START)]
-            .chars()
-            .zip(imgt::FR3_START..imgt::CDR3_START)
-            .flat_map(|(c, pos)| (c == '-').then_some(pos))
-            .collect()
-    }
-
-    pub fn get_missing_positions_in_fr4(&self) -> Vec<usize> {
-        self.alignment[(imgt::FR4_START - 1)..]
-            .chars()
-            .zip(imgt::FR3_START..imgt::CDR3_START)
-            .flat_map(|(c, pos)| (c == '-').then_some(pos))
-            .collect()
-    }
     pub fn get_alignment(&self) -> &[u8] {
         self.alignment.as_bytes()
     }
@@ -189,9 +173,21 @@ mod test {
     fn test_get_missing_positions_in_framework() {
         let ref_seq = ReferenceSequence::new("test", TEST_ALIGNMENT_STR.as_bytes()).unwrap();
 
-        assert_eq!(ref_seq.get_missing_positions_in_fr1(), vec![10]);
-        assert_eq!(ref_seq.get_missing_positions_in_fr2(), vec![]);
-        assert_eq!(ref_seq.get_missing_positions_in_fr3(), vec![73]);
-        assert_eq!(ref_seq.get_missing_positions_in_fr4(), vec![]);
+        assert_eq!(
+            ref_seq.get_missing_positions_in_framework(&imgt::Framework::FR1),
+            vec![10]
+        );
+        assert_eq!(
+            ref_seq.get_missing_positions_in_framework(&imgt::Framework::FR2),
+            vec![]
+        );
+        assert_eq!(
+            ref_seq.get_missing_positions_in_framework(&imgt::Framework::FR3),
+            vec![73]
+        );
+        assert_eq!(
+            ref_seq.get_missing_positions_in_framework(&imgt::Framework::FR4),
+            vec![]
+        );
     }
 }
