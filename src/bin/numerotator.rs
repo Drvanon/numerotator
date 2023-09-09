@@ -3,7 +3,7 @@ use clap::{value_parser, Parser};
 use numerotator::imgt::{
     self,
     annotations::{Annotation, VRegionAnnotation},
-    find_best_reference_sequence, ReferenceAlignment,
+    find_best_reference_sequence, ReferenceAlignment, conserved_residues::ConservedResidues,
 };
 use std::path::PathBuf;
 use tracing::{debug, error, info, trace, Level};
@@ -51,12 +51,9 @@ fn main() {
 
     info!("Initializing...");
     debug!("Initializing reference sequences.");
-    let ref_seqs = imgt::initialize_ref_seqs();
+    let ref_seqs = imgt::reference::initialize_reference_sequences();
 
-    debug!("Initializing conserved residues.");
-    let all_conserved_residues = imgt::initialize_conserved_residues();
-
-    // Records are much nicer to deal with than straigt strings, since they carry their own
+    // Records are much nicer to deal with than simple strings, since they carry their own
     // identifier and description. Now they don't have to be generated at the call site.
     // It might not be great to be tied to fasta though.
     debug!("Collecting sequences from command line.");
@@ -81,18 +78,15 @@ fn main() {
 
     sequences_from_command_line
         .chain(sequences_from_sequence_file.into_iter().flatten())
-        .map(|query_seq|  find_best_reference_sequence(query_seq, &ref_seqs) )
+        .map(|query_seq| find_best_reference_sequence(query_seq, &ref_seqs) )
         .flat_map(report_error)
         .map(|reference_alignment| -> Result<(VRegionAnnotation, ReferenceAlignment), anyhow::Error> {
-            let reference_conserved_residues = all_conserved_residues
-                .get(reference_alignment.reference_record.id())
-                .expect("Reference sequence id should be in reference alignments aswell.");
             trace!(
                 query_seq = reference_alignment.query_record.id(),
                 alignment = format!("{:?}", reference_alignment.alignment.path()),
                 "Transferring reference alignment."
             );
-            let vregions = transfer_conserved_residues(reference_conserved_residues, &reference_alignment);
+            let vregions = transfer_conserved_residues(reference_alignment.reference.get_conserved_residues(), &reference_alignment);
             Ok((vregions?, reference_alignment))
         })
         .flat_map(report_error)
@@ -126,7 +120,7 @@ fn main() {
 }
 
 fn transfer_conserved_residues(
-    reference_conserved_residues: &imgt::ConservedResidues,
+    reference_conserved_residues: &ConservedResidues,
     reference_alignment: &ReferenceAlignment,
 ) -> Result<VRegionAnnotation, anyhow::Error> {
     let vregions = reference_conserved_residues

@@ -1,6 +1,6 @@
 use clap::{value_parser, Parser};
 use itertools::Itertools;
-use numerotator::imgt;
+use numerotator::imgt::reference::is_valid_alignment;
 use tracing::{debug, info, Level};
 use tracing_subscriber::FmtSubscriber;
 
@@ -60,7 +60,7 @@ fn main() {
         .filter(|line| is_alignment_line(line))
         .inspect(|_| n_valid_lines += 1)
         .filter(|line| {
-            imgt::ConservedResidues::is_valid_alignment(
+            is_valid_alignment(
                 line.split_ascii_whitespace()
                     .skip(1)
                     .take(1)
