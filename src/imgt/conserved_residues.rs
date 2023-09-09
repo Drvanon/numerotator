@@ -26,7 +26,7 @@ pub fn count_gaps_in_sequence_before_index(sequence: &[u8], index: usize) -> usi
 /// Find the position in the alignment sequence that corresponds to a given position.
 ///
 /// For example, say the following alignment exists.
-/// ```
+/// ```txt
 ///    1 2 3 4 5
 /// x: A B C D E
 ///    | |   | |
@@ -110,9 +110,7 @@ mod test {
 
     #[test]
     fn test_conserved_amino_acids_from_str() {
-        let conserved_aas = ConservedResidues::from(
-            ReferenceSequence::new("test", TEST_ALIGNMENT_STR.as_bytes()).unwrap(),
-        );
+        let conserved_aas = ConservedResidues::from(TEST_ALIGNMENT_STR.as_bytes());
         assert_eq!(conserved_aas.first_cys, 22);
         assert_eq!(conserved_aas.conserved_trp, 36);
         assert_eq!(conserved_aas.hydrophobic_89, 81);

@@ -168,6 +168,7 @@ fn number_framework(
     framework_start: usize,
     framework_end: usize,
 ) -> Vec<Annotation> {
+    let reference_vregion_annotation = reference_alignment.reference.get_vregion_annotation();
     reference_alignment
         .alignment
         .path()

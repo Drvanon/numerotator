@@ -5,6 +5,9 @@ use super::{
     ConservedResidues, IMGTError,
 };
 
+// TODO: Find a better name than try from.
+// TODO: Should there be an option to not use an alignment?
+
 impl FrameworkAnnotation {
     /// Try to create the framework annotations.
     ///
@@ -24,7 +27,7 @@ impl FrameworkAnnotation {
                         _ => true,
                     }
             })
-            .expect("First amino acid should be in path.")
+            .expect("Alignment should contain first amino acid of reference sequence.")
             .1;
 
         // bio::alignment::Alignment::path uses 1 based indexing.
@@ -41,7 +44,7 @@ impl FrameworkAnnotation {
                         _ => true,
                     }
             })
-            .expect("First amino acid should be in path.")
+            .expect("Alignment should contain first amino acid of reference sequence.")
             .1;
 
         let fr1 = Annotation {

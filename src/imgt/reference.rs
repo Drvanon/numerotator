@@ -1,8 +1,10 @@
+use rayon::prelude::*;
 use std::collections::HashMap;
 
+use bio::alignment::AlignmentOperation;
 use itertools::Itertools;
 
-use super::{conserved_residues::ConservedResidues, IMGTError};
+use super::{annotations::VRegionAnnotation, conserved_residues::ConservedResidues, IMGTError};
 
 pub fn is_valid_alignment(alignment: &[u8]) -> Option<ConservedResidues> {
     let (&aa_23, &aa_41, &aa_89, &aa_104, &aa_118) = match alignment
@@ -69,24 +71,54 @@ impl ReferenceSequence {
     pub fn get_alignment(&self) -> &[u8] {
         self.alignment.as_bytes()
     }
+
+    pub fn get_vregion_annotation(&self) -> VRegionAnnotation {
+        let length = self.get_sequence().len();
+
+        VRegionAnnotation::try_from(
+            &self.conserved_residues,
+            &bio::alignment::Alignment {
+                score: 0,
+                ystart: 0,
+                xstart: 0,
+                yend: length,
+                xend: length,
+                ylen: length,
+                xlen: length,
+                operations: self
+                    .get_sequence()
+                    .into_iter()
+                    .map(|_| AlignmentOperation::Match)
+                    .collect(),
+                mode: bio::alignment::AlignmentMode::Local,
+            },
+        )
+        .expect("Should always be able to annotate reference sequences.")
+    }
 }
 
 /// Load the precomputed and curated reference sequences.
 pub fn initialize_reference_sequences() -> HashMap<&'static str, ReferenceSequence> {
     // TODO: Write a proper stockholm reader.
     let stockholm_data = include_str!("../data/reference.stockholm");
+    let blacklist: Vec<_> = include_str!("../data/blacklist.txt")
+        .split_ascii_whitespace()
+        .collect();
+
     stockholm_data
         .split_ascii_whitespace()
         .tuples()
         .filter_map(|(id, alignment)| {
             Some((id, ReferenceSequence::new(id, alignment.as_bytes()).ok()?))
         })
+        .filter(|(id, _)| !blacklist.contains(id))
         .collect()
 }
 
 #[cfg(test)]
 mod test {
     use super::*;
+    use tracing::trace;
     use tracing_test::traced_test;
     const TEST_ALIGNMENT_STR: &str = "QVQLVQSGA-EVKKPGASVKVSCKASGYTF----TSYGISWVRQAPGQGLEWMGWISAY--NGNTNYAQKLQ-GRVTMTTDTSTSTAYMELRSLRSDDTAVYYCAR--------MDVWGQGTTVTVSS";
 
@@ -109,5 +141,19 @@ mod test {
         let ref_seq_res = ReferenceSequence::new("test", TEST_ALIGNMENT_STR.as_bytes());
         assert!(ref_seq_res.is_ok());
         assert_eq!(ref_seq_res.unwrap().name, "test");
+    }
+
+    #[test]
+    #[traced_test]
+    fn test_vregion_annotations_for_reference_sequences() {
+        let ref_seqs = initialize_reference_sequences();
+        ref_seqs
+            .values()
+            .collect::<Vec<_>>()
+            .par_iter()
+            .for_each(|ref_seq| {
+                trace!(sequence = ref_seq.name, "Getting VREGION annotation.");
+                ref_seq.get_vregion_annotation();
+            });
     }
 }

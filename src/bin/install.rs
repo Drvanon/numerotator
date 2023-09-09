@@ -68,6 +68,7 @@ fn main() {
                     .expect("Valid lines should have at least two parts.")
                     .as_bytes(),
             )
+            .is_some()
         })
         .collect();
 
