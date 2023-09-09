@@ -4,6 +4,7 @@ use bio::alignment::AlignmentOperation;
 use itertools::Itertools;
 
 use super::{annotations::VRegionAnnotation, conserved_residues::ConservedResidues, IMGTError};
+use crate::imgt;
 
 pub fn is_valid_alignment(alignment: &[u8]) -> Option<ConservedResidues> {
     let (&aa_23, &aa_41, &aa_89, &aa_104, &aa_118) = match alignment
@@ -64,9 +65,36 @@ impl ReferenceSequence {
     }
 
     pub fn get_missing_positions_in_fr1(&self) -> Vec<usize> {
-        todo!()
+        self.alignment[(imgt::FR1_START - 1)..(imgt::CDR1_START)]
+            .chars()
+            .zip(imgt::FR1_START..imgt::CDR1_START)
+            .flat_map(|(c, pos)| (c == '-').then_some(pos))
+            .collect()
     }
 
+    pub fn get_missing_positions_in_fr2(&self) -> Vec<usize> {
+        self.alignment[(imgt::FR2_START - 1)..(imgt::CDR2_START)]
+            .chars()
+            .zip(imgt::FR2_START..imgt::CDR2_START)
+            .flat_map(|(c, pos)| (c == '-').then_some(pos))
+            .collect()
+    }
+
+    pub fn get_missing_positions_in_fr3(&self) -> Vec<usize> {
+        self.alignment[(imgt::FR3_START - 1)..(imgt::CDR3_START)]
+            .chars()
+            .zip(imgt::FR3_START..imgt::CDR3_START)
+            .flat_map(|(c, pos)| (c == '-').then_some(pos))
+            .collect()
+    }
+
+    pub fn get_missing_positions_in_fr4(&self) -> Vec<usize> {
+        self.alignment[(imgt::FR4_START - 1)..]
+            .chars()
+            .zip(imgt::FR3_START..imgt::CDR3_START)
+            .flat_map(|(c, pos)| (c == '-').then_some(pos))
+            .collect()
+    }
     pub fn get_alignment(&self) -> &[u8] {
         self.alignment.as_bytes()
     }
@@ -155,5 +183,15 @@ mod test {
                 trace!(sequence = ref_seq.name, "Getting VREGION annotation.");
                 ref_seq.get_vregion_annotation();
             });
+    }
+
+    #[test]
+    fn test_get_missing_positions_in_framework() {
+        let ref_seq = ReferenceSequence::new("test", TEST_ALIGNMENT_STR.as_bytes()).unwrap();
+
+        assert_eq!(ref_seq.get_missing_positions_in_fr1(), vec![10]);
+        assert_eq!(ref_seq.get_missing_positions_in_fr2(), vec![]);
+        assert_eq!(ref_seq.get_missing_positions_in_fr3(), vec![73]);
+        assert_eq!(ref_seq.get_missing_positions_in_fr4(), vec![]);
     }
 }
