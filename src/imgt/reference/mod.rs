@@ -1,4 +1,3 @@
-use rayon::prelude::*;
 use std::collections::HashMap;
 
 use bio::alignment::AlignmentOperation;
@@ -100,8 +99,8 @@ impl ReferenceSequence {
 /// Load the precomputed and curated reference sequences.
 pub fn initialize_reference_sequences() -> HashMap<&'static str, ReferenceSequence> {
     // TODO: Write a proper stockholm reader.
-    let stockholm_data = include_str!("../data/reference.stockholm");
-    let blacklist: Vec<_> = include_str!("../data/blacklist.txt")
+    let stockholm_data = include_str!("reference.stockholm");
+    let blacklist: Vec<_> = include_str!("blacklist.txt")
         .split_ascii_whitespace()
         .collect();
 
@@ -118,6 +117,7 @@ pub fn initialize_reference_sequences() -> HashMap<&'static str, ReferenceSequen
 #[cfg(test)]
 mod test {
     use super::*;
+    use rayon::prelude::*;
     use tracing::trace;
     use tracing_test::traced_test;
     const TEST_ALIGNMENT_STR: &str = "QVQLVQSGA-EVKKPGASVKVSCKASGYTF----TSYGISWVRQAPGQGLEWMGWISAY--NGNTNYAQKLQ-GRVTMTTDTSTSTAYMELRSLRSDDTAVYYCAR--------MDVWGQGTTVTVSS";
